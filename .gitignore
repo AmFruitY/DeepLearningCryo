@@ -2,3 +2,5 @@
 
 .venv/
 Siamese_Network_Loss_Function/.keras/
+Siamese_Network_Loss_Function/__pycache__/
+another_venv/
