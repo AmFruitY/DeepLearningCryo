@@ -71,6 +71,7 @@ class SiameseModel(Model):
         # the negative example.
         ap_distance, an_distance = self.siamese_network(data)
 
+        # TRIPLET LOSS
         # Computing the Triplet Loss by subtracting both distances and
         # making sure we don't get a negative value.
         loss = ap_distance - an_distance

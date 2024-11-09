@@ -30,18 +30,3 @@ class DistanceLayer(layers.Layer):
         ap_distance = ops.sum(tf.square(anchor - positive), -1)
         an_distance = ops.sum(tf.square(anchor - negative), -1)
         return (ap_distance, an_distance)
-
-
-anchor_input = layers.Input(name="anchor", shape=target_shape + (3,))
-positive_input = layers.Input(name="positive", shape=target_shape + (3,))
-negative_input = layers.Input(name="negative", shape=target_shape + (3,))
-
-distances = DistanceLayer()(
-    embedding(resnet.preprocess_input(anchor_input)),
-    embedding(resnet.preprocess_input(positive_input)),
-    embedding(resnet.preprocess_input(negative_input)),
-)
-
-siamese_network = Model(
-    inputs=[anchor_input, positive_input, negative_input], outputs=distances
-)

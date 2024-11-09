@@ -13,12 +13,32 @@ from keras import metrics
 from keras import Model
 from keras.applications import resnet
 
+# Hides warning to rebuild TensorFlow
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
+
+from keras import mixed_precision
+
+# Set the global mixed precision policy to 'mixed_float16'
+policy = mixed_precision.Policy('mixed_float16')
+mixed_precision.set_global_policy(policy)
+
+
+# Runtime initialization will not alocate all the memory on the device
+physical_devices = tf.config.experimental.list_physical_devices('GPU')
+if len(physical_devices) > 0:
+    tf.config.experimental.set_memory_growth(physical_devices[0], True)
+
 # Classes
 from SiameseModel import SiameseModel
 from DistanceLayer import DistanceLayer
 
-
 target_shape = (200, 200)
+
+
+# Paths! 
+cache_dir = Path("/mnt/c/Users/joshu/Desktop/TFG/DeepLearningCryo/Siamese_Network_Loss_Function/.keras/") # ".keras"
+anchor_images_path = Path("/mnt/c/Users/joshu/Desktop/TFG/DeepLearningCryo/Siamese_Network_Loss_Function/.keras/left/")
+positive_images_path = Path("/mnt/c/Users/joshu/Desktop/TFG/DeepLearningCryo/Siamese_Network_Loss_Function/.keras/right/")
 
 def preprocess_image(filename):
     """
@@ -46,13 +66,18 @@ def preprocess_triplets(anchor, positive, negative):
     )
 
 # We need to make sure both the anchor and positive images are loaded in
-# sorted order so we can match them together.
+# sorted order so we can match them together. 
 anchor_images = sorted(
-    [str(r"/Users/joshu/Desktop/TFG/Siamese_Network_Loss_Function/.keras/right/" + f) for f in os.listdir(r"/Users/joshu/Desktop/TFG/Siamese_Network_Loss_Function/.keras/right")]
+    [str(anchor_images_path / f) for f in os.listdir(anchor_images_path)]
 )
+# This is to create the full path to the image we want to use. To explain it we must do it in step by step:
+# This is a list comprehension in which 1) Using a for loop, for every f in the path we acquire the name of the image
+# 2) Then we concatenate the image file with the path we have already specified from before.
+# 3) Finally, we want to sort the list since it is much more convenient.
+
 
 positive_images = sorted(
-    [str(r"/Users/joshu/Desktop/TFG/Siamese_Network_Loss_Function/.keras/left/" + f) for f in os.listdir(r"/Users/joshu/Desktop/TFG/Siamese_Network_Loss_Function/.keras/left")]
+    [str(positive_images_path / f) for f in os.listdir(positive_images_path)]
 )
 
 image_count = len(anchor_images)
@@ -107,8 +132,6 @@ def visualize(anchor, positive, negative):
 
 visualize(*list(train_dataset.take(1).as_numpy_iterator())[0])
 
-"I don't know if it's visualizing it well. I have to come back to this code to see."
-
 #%% Setting the embedding model
 
 base_cnn = resnet.ResNet50(
@@ -130,16 +153,44 @@ for layer in base_cnn.layers:
         trainable = True
     layer.trainable = trainable
 
+# Setting up the Siamese Network
+
+anchor_input = layers.Input(name="anchor", shape=target_shape + (3,))
+positive_input = layers.Input(name="positive", shape=target_shape + (3,))
+negative_input = layers.Input(name="negative", shape=target_shape + (3,))
+
+distances = DistanceLayer()(
+    embedding(resnet.preprocess_input(anchor_input)),
+    embedding(resnet.preprocess_input(positive_input)),
+    embedding(resnet.preprocess_input(negative_input)),
+)
+
+siamese_network = Model(
+    inputs=[anchor_input, positive_input, negative_input], outputs=distances
+)
+
 #%% Training
+
 
 siamese_model = SiameseModel(siamese_network)
 siamese_model.compile(optimizer=optimizers.Adam(0.0001))
-siamese_model.fit(train_dataset, epochs=10, validation_data=val_dataset)
+siamese_model.summary()
+siamese_model.fit(train_dataset, epochs=2, validation_data=val_dataset,batch_size=2)
+
+# Saving the model in my local directory
+# savedir = Path("/mnt/c/Users/joshu/Desktop/TFG/DeepLearningCryo/Siamese_Network_Loss_Function/siamesetlktrained/")
+# siamese_model.save(savedir)
+
+# Saving the model weights in my local directory
+# saveweightsdir = Path("/mnt/c/Users/joshu/Desktop/TFG/DeepLearningCryo/Siamese_Network_Loss_Function/siamesetlktrainedweights/")
+# siamese_model.save_weights(saveweightsdir)
+
 
 #%% Inspecting
 
 sample = next(iter(train_dataset))
 visualize(*sample)
+
 
 anchor, positive, negative = sample
 anchor_embedding, positive_embedding, negative_embedding = (
