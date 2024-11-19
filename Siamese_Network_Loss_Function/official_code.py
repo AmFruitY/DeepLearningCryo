@@ -19,8 +19,8 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 from keras import mixed_precision
 
 # Set the global mixed precision policy to 'mixed_float16'
-policy = mixed_precision.Policy('mixed_float16')
-mixed_precision.set_global_policy(policy)
+# policy = mixed_precision.Policy('mixed_float16')
+# mixed_precision.set_global_policy(policy)
 
 
 # Runtime initialization will not alocate all the memory on the device
@@ -34,7 +34,7 @@ from DistanceLayer import DistanceLayer
 
 # The example target shape is 200, 200
 # I will be using 100,100 for the cryogenic molecules
-target_shape = (200, 200)
+target_shape = (100, 100)
 
 
 # Paths! 
@@ -135,7 +135,7 @@ def visualize(anchor, positive, negative):
     plt.show()
 
 
-visualize(*list(train_dataset.take(1).as_numpy_iterator())[0])
+# visualize(*list(train_dataset.take(1).as_numpy_iterator())[0])
 
 #%% Setting the embedding model
 
@@ -196,17 +196,15 @@ siamese_model.fit(train_dataset, epochs=2, validation_data=val_dataset, batch_si
 #%% Inspecting
 
 sample = next(iter(train_dataset))
-visualize(*sample)
+# visualize(*sample)
 
 
 anchor, positive, negative = sample
 anchor_embedding, positive_embedding, negative_embedding = (
-    embedding(resnet.preprocess_input(tf.cast(anchor, dtype = tf.int16))),
-    embedding(resnet.preprocess_input(tf.cast(positive, dtype = tf.int16))),
-    embedding(resnet.preprocess_input(tf.cast(negative, dtype = tf.int16))),
+    embedding(resnet.preprocess_input(anchor)),
+    embedding(resnet.preprocess_input(positive)),
+    embedding(resnet.preprocess_input(negative)),
 )
-
-exit()
 
 cosine_similarity = metrics.CosineSimilarity()
 
