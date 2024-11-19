@@ -4,4 +4,5 @@
 Siamese_Network_Loss_Function/.keras/
 Siamese_Network_Loss_Function/__pycache__/
 another_venv/
-data/
+Siamese_Network_Loss_Function/data/
+Siamese_Network_Loss_Function/example.py/

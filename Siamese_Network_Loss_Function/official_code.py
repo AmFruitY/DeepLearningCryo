@@ -38,9 +38,9 @@ target_shape = (200, 200)
 
 
 # Paths! 
-cache_dir = Path("/mnt/c/Users/joshu/Desktop/TFG/DeepLearningCryo/Siamese_Network_Loss_Function/.keras/") # ".keras"
-anchor_images_path = Path("/mnt/c/Users/joshu/Desktop/TFG/DeepLearningCryo/Siamese_Network_Loss_Function/.keras/left/")
-positive_images_path = Path("/mnt/c/Users/joshu/Desktop/TFG/DeepLearningCryo/Siamese_Network_Loss_Function/.keras/right/")
+cache_dir = Path("/mnt/c/Users/joshu/Desktop/TFG/DeepLearningCryo/Siamese_Network_Loss_Function/data/")
+anchor_images_path = cache_dir / "clear1"
+other_folders = [cache_dir / "clear2", cache_dir / "clear3", cache_dir / "clear4"]
 
 def preprocess_image(filename):
     """
@@ -67,49 +67,51 @@ def preprocess_triplets(anchor, positive, negative):
         preprocess_image(negative),
     )
 
-# We need to make sure both the anchor and positive images are loaded in
-# sorted order so we can match them together.
-anchor_images = sorted(
-    [str(anchor_images_path / f) for f in os.listdir(anchor_images_path)]
-)
 
-# This is to create the full path to the image we want to use. To explain it we must do it in step by step:
-# This is a list comprehension in which 1) Using a for loop, for every f in the path we acquire the name of the image
-# 2) Then we concatenate the image file with the path we have already specified from before.
-# 3) Finally, we want to sort the list since it is much more convenient.
+# Get sorted list of anchor images - The anchor 
+anchor_images = sorted([str(anchor_images_path / f) for f in os.listdir(anchor_images_path)])
 
-# Since some dataset are not equal, we will be using the anchor_images length to limit the positive ones.
-# Although we might need to generalize this since the opposite might happen: the positive images dataset limit the anchor images dataset
-positive_images = sorted(
-    [str(positive_images_path / f) for f in os.listdir(positive_images_path)]
-)
+# Use this seed so we can use reproducibility
+random.seed(42)
 
-image_count = len(anchor_images)
+# Function to get a randomized version of the list such that no image is in the same index
+def get_randomized_images(images):
+    randomized = images[:] # Creates a copy of the list we want to randomize
+    while True:
+        random.shuffle(randomized) # Randomize the objects inside the said list
+        if all(randomized[i] != images[i] for i in range(len(images))): # Only when each and every object in the list are different does the loop stops
+            return randomized
+
+# Create randomized images list
+positive_images = get_randomized_images(anchor_images)
 anchor_dataset = tf.data.Dataset.from_tensor_slices(anchor_images)
 positive_dataset = tf.data.Dataset.from_tensor_slices(positive_images)
+image_count = len(anchor_images)
 
-# To generate the list of negative images, let's randomize the list of
-# available images and concatenate them together.
-rng = np.random.RandomState(seed=42)
-rng.shuffle(anchor_images)
-rng.shuffle(positive_images)
+# Generating the negative dataset - This part differs from the example as we want the negative dataset to be from different classes
+# Function to get a random image from other folders
+def get_random_image_from_folders(folders, num_images):
+    all_images = []
+    for folder in folders: # folders must be a list of the other folder paths
+        all_images.extend([str(folder / f) for f in os.listdir(folder)]) # We use extend here to add the element to the back of the list
+                                                                        # If we use the append method, it will add a list inside the list
+    return [random.choice(all_images) for _ in range(num_images)]
 
-negative_images = anchor_images + positive_images
-np.random.RandomState(seed=32).shuffle(negative_images)
-
+# Get random images from other folders (same length as anchor images)
+negative_images = get_random_image_from_folders(other_folders, len(anchor_images))
 negative_dataset = tf.data.Dataset.from_tensor_slices(negative_images)
 negative_dataset = negative_dataset.shuffle(buffer_size=4096)
 
-dataset = tf.data.Dataset.zip((anchor_dataset, positive_dataset, negative_dataset)) # Converts the three dataset into a single dataset
-dataset = dataset.shuffle(buffer_size=1024) # Shuffles the dataset in order to remove order bias?
-dataset = dataset.map(preprocess_triplets) # Applies the function to every dataset, so in this case, it reads the string file so that it can be processed as an image file
+dataset = tf.data.Dataset.zip((anchor_dataset, positive_dataset, negative_dataset))
+dataset = dataset.shuffle(buffer_size=1024)
+dataset = dataset.map(preprocess_triplets)
 
 # Let's now split our dataset in train and validation.
 train_dataset = dataset.take(round(image_count * 0.8))
 val_dataset = dataset.skip(round(image_count * 0.8))
 
-train_dataset = train_dataset.batch(32, drop_remainder=False) # Batching the training dataset into 32 triplets or less if it is not a multiple of 32 - Used for the last batch
-train_dataset = train_dataset.prefetch(tf.data.AUTOTUNE) # Prepares the next batch to reduce data-loading bottlenecks
+train_dataset = train_dataset.batch(32, drop_remainder=False)
+train_dataset = train_dataset.prefetch(tf.data.AUTOTUNE)
 
 val_dataset = val_dataset.batch(32, drop_remainder=False)
 val_dataset = val_dataset.prefetch(tf.data.AUTOTUNE)
@@ -135,8 +137,7 @@ def visualize(anchor, positive, negative):
 
 visualize(*list(train_dataset.take(1).as_numpy_iterator())[0])
 
-#%% Setting the embedding model - Transform the input data into lower dimensional representation known as embedding vector
-# The concept we looked at the first day
+#%% Setting the embedding model
 
 base_cnn = resnet.ResNet50(
     weights="imagenet", input_shape=target_shape + (3,), include_top=False
@@ -181,7 +182,7 @@ siamese_model.compile(optimizer=optimizers.Adam(0.0001))
 siamese_model.summary()
 # If we want to troubleshoot problems, we might want to use smaller epochs and smaller batch sizes so that we can make sure that it is not overloading the system.
 
-siamese_model.fit(train_dataset, epochs=2, validation_data=val_dataset)
+siamese_model.fit(train_dataset, epochs=2, validation_data=val_dataset, batch_size=1)
 
 # Saving the model in my local directory
 # savedir = Path("/mnt/c/Users/joshu/Desktop/TFG/DeepLearningCryo/Siamese_Network_Loss_Function/siamesetlktrained/")
@@ -200,11 +201,12 @@ visualize(*sample)
 
 anchor, positive, negative = sample
 anchor_embedding, positive_embedding, negative_embedding = (
-    embedding(resnet.preprocess_input(anchor)),
-    embedding(resnet.preprocess_input(positive)),
-    embedding(resnet.preprocess_input(negative)),
+    embedding(resnet.preprocess_input(tf.cast(anchor, dtype = tf.int16))),
+    embedding(resnet.preprocess_input(tf.cast(positive, dtype = tf.int16))),
+    embedding(resnet.preprocess_input(tf.cast(negative, dtype = tf.int16))),
 )
 
+exit()
 
 cosine_similarity = metrics.CosineSimilarity()
 
