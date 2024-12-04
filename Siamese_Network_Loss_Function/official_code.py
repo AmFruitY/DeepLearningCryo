@@ -62,11 +62,15 @@ def preprocess_triplets(anchor, positive, negative):
     preprocess them.
     """
 
+    anchor_image, anchor_label = anchor
+    positive_image, positive_label = positive
+    negative_image, negative_label = negative
+
     return (
-        preprocess_image(anchor),
-        preprocess_image(positive),
-        preprocess_image(negative),
-    )
+        preprocess_image(anchor_image),
+        preprocess_image(positive_image),
+        preprocess_image(negative_image),
+    ), (anchor_label, positive_label, negative_label)
 
 # Use this seed so we can use reproducibility
 random.seed(42)
@@ -95,8 +99,11 @@ def create_dataset(list_of_image_paths):
     anchor_images = []
     positive_images = []
     negative_images =[]
+    labels = []
 
     for i, path in enumerate(list_of_image_paths):
+
+        # Anchor and Positive dataset creation
         anchor_images_individual = sorted([str(path / f) for f in os.listdir(path)]) # Get sorted list of anchor images - The anchor 
         positive_images_indivual = get_randomized_images(anchor_images_individual) # Function to get a randomized version of the list such that no image is in the same index
         
@@ -105,21 +112,25 @@ def create_dataset(list_of_image_paths):
 
         image_count = len(anchor_images_individual)
 
+        # Negative dataset creation
         other_paths = list_of_image_paths[:i] + list_of_image_paths[i+1:] # This excludes the current anchor path 
         negative_images_individual = get_random_image_from_folders(other_paths, image_count)
         negative_images.extend(negative_images_individual)
 
-    return anchor_images, positive_images, negative_images
+        # Labels
+        class_label = [i] * image_count
+        labels.extend(class_label)
+    return anchor_images, positive_images, negative_images, labels
 
-anchor_images, positive_images, negative_images = create_dataset(images_path)
+anchor_images, positive_images, negative_images, labels = create_dataset(images_path)
 
 image_count = len(anchor_images)
 
 
 # Create the dataset for TensorFlow
-anchor_dataset = tf.data.Dataset.from_tensor_slices(anchor_images)
-positive_dataset = tf.data.Dataset.from_tensor_slices(positive_images)
-negative_dataset = tf.data.Dataset.from_tensor_slices(negative_images)
+anchor_dataset = tf.data.Dataset.from_tensor_slices((anchor_images, labels))
+positive_dataset = tf.data.Dataset.from_tensor_slices((positive_images, labels))
+negative_dataset = tf.data.Dataset.from_tensor_slices((negative_images, labels))
 negative_dataset = negative_dataset.shuffle(buffer_size=4096)
 
 dataset = tf.data.Dataset.zip((anchor_dataset, positive_dataset, negative_dataset))
@@ -130,7 +141,7 @@ dataset = dataset.map(preprocess_triplets)
 train_dataset = dataset.take(round(image_count * 0.8))
 val_dataset = dataset.skip(round(image_count * 0.8))
 
-train_dataset = train_dataset.batch(32, drop_remainder=False)
+train_dataset = train_dataset.batch(32, drop_remainder=False) # If the last batch is smaller than 32, then it drops it.
 train_dataset = train_dataset.prefetch(tf.data.AUTOTUNE)
 
 val_dataset = val_dataset.batch(32, drop_remainder=False)
@@ -193,6 +204,28 @@ distances = DistanceLayer()(
 siamese_network = Model(
     inputs=[anchor_input, positive_input, negative_input], outputs=distances
 )
+
+# Extract embeddings and labels from val_dataset
+embeddings = []
+labels = []
+
+for (anchor, positive, negative), (anchor_label, positive_label, negative_label) in val_dataset:
+    anchor_embeddings = embedding(resnet.preprocess_input(anchor))  # Obtain embeddings from your model
+    embeddings.extend(anchor_embeddings.numpy())
+    labels.extend(anchor_label.numpy())  # Collect labels for grouping
+
+# Organize embeddings by class
+class_embeddings = {}
+for embedding, label in zip(embeddings, labels):
+    if label not in class_embeddings:
+        class_embeddings[label] = []
+    class_embeddings[label].append(embedding)
+
+for key, value in class_embeddings.items():
+    #print value
+    print(key, len([item for item in value if item]))
+
+exit()
 
 # Create a list of the embedding vectors given a TensorFlow dataset
 def embedding_vectors(dataset):
