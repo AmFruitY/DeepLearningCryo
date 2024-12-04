@@ -39,8 +39,10 @@ target_shape = (100, 100)
 
 # Paths! 
 cache_dir = Path("/mnt/c/Users/joshu/Desktop/TFG/DeepLearningCryo/Siamese_Network_Loss_Function/data/")
-anchor_images_path = cache_dir / "clear1"
-other_folders = [cache_dir / "clear2", cache_dir / "clear3", cache_dir / "clear4"]
+images_path = [cache_dir / "clear1", cache_dir / "clear2", cache_dir / "clear3", cache_dir / "clear4"]
+
+# anchor_images_path = cache_dir / "clear1"
+# other_folders = [cache_dir / "clear2", cache_dir / "clear3", cache_dir / "clear4"]
 
 def preprocess_image(filename):
     """
@@ -54,7 +56,6 @@ def preprocess_image(filename):
     image = tf.image.resize(image, target_shape)
     return image
 
-
 def preprocess_triplets(anchor, positive, negative):
     """
     Given the filenames corresponding to the three images, load and
@@ -67,26 +68,16 @@ def preprocess_triplets(anchor, positive, negative):
         preprocess_image(negative),
     )
 
-
-# Get sorted list of anchor images - The anchor 
-anchor_images = sorted([str(anchor_images_path / f) for f in os.listdir(anchor_images_path)])
-
 # Use this seed so we can use reproducibility
 random.seed(42)
 
-# Function to get a randomized version of the list such that no image is in the same index
+# Given a list of elements, it creates another list in which the no element is in the same position as the original list.
 def get_randomized_images(images):
     randomized = images[:] # Creates a copy of the list we want to randomize
     while True:
         random.shuffle(randomized) # Randomize the objects inside the said list
         if all(randomized[i] != images[i] for i in range(len(images))): # Only when each and every object in the list are different does the loop stops
             return randomized
-
-# Create randomized images list
-positive_images = get_randomized_images(anchor_images)
-anchor_dataset = tf.data.Dataset.from_tensor_slices(anchor_images)
-positive_dataset = tf.data.Dataset.from_tensor_slices(positive_images)
-image_count = len(anchor_images)
 
 # Generating the negative dataset - This part differs from the example as we want the negative dataset to be from different classes
 # Function to get a random image from other folders
@@ -97,8 +88,37 @@ def get_random_image_from_folders(folders, num_images):
                                                                         # If we use the append method, it will add a list inside the list
     return [random.choice(all_images) for _ in range(num_images)]
 
-# Get random images from other folders (same length as anchor images)
-negative_images = get_random_image_from_folders(other_folders, len(anchor_images))
+# This function is to automize the creation of dataset to be able to create a larger dataset
+# Since we want to use not only one class 
+def create_dataset(list_of_image_paths):
+
+    anchor_images = []
+    positive_images = []
+    negative_images =[]
+
+    for i, path in enumerate(list_of_image_paths):
+        anchor_images_individual = sorted([str(path / f) for f in os.listdir(path)]) # Get sorted list of anchor images - The anchor 
+        positive_images_indivual = get_randomized_images(anchor_images_individual) # Function to get a randomized version of the list such that no image is in the same index
+        
+        anchor_images.extend(anchor_images_individual)
+        positive_images.extend(positive_images_indivual)
+
+        image_count = len(anchor_images_individual)
+
+        other_paths = list_of_image_paths[:i] + list_of_image_paths[i+1:] # This excludes the current anchor path 
+        negative_images_individual = get_random_image_from_folders(other_paths, image_count)
+        negative_images.extend(negative_images_individual)
+
+    return anchor_images, positive_images, negative_images
+
+anchor_images, positive_images, negative_images = create_dataset(images_path)
+
+image_count = len(anchor_images)
+
+
+# Create the dataset for TensorFlow
+anchor_dataset = tf.data.Dataset.from_tensor_slices(anchor_images)
+positive_dataset = tf.data.Dataset.from_tensor_slices(positive_images)
 negative_dataset = tf.data.Dataset.from_tensor_slices(negative_images)
 negative_dataset = negative_dataset.shuffle(buffer_size=4096)
 
@@ -174,6 +194,55 @@ siamese_network = Model(
     inputs=[anchor_input, positive_input, negative_input], outputs=distances
 )
 
+# Create a list of the embedding vectors given a TensorFlow dataset
+def embedding_vectors(dataset):
+
+    embedding_vectors = []
+    for sample in dataset:
+        sample_image, _, _ = sample
+        sample_image_embedding = embedding(resnet.preprocess_input(sample_image)) 
+        embedding_vectors.extend(sample_image_embedding)
+        print(len(embedding_vectors[0]))
+        # It goes through this loop 11 times: 11x32
+
+    return embedding_vectors
+
+def confusion_similarity_matrix(embedding_vectors):
+    cosine_similarity = metrics.CosineSimilarity()
+    num_embeddings = int(len(embedding_vectors)/32)
+    similarity_matrix = np.zeros((num_embeddings, num_embeddings))
+
+    for i in range(num_embeddings):
+        for j in range(num_embeddings):
+            similarity = cosine_similarity(embedding_vectors[i], embedding_vectors[j])
+            similarity_matrix[i, j] = similarity.numpy()
+
+
+    return np.array(similarity_matrix)
+
+# Returns the mean of the diagonal and the mean of the non-diagonal elements of a squared array.
+def diagonal_non_diagonal_mean(array):
+
+    diagonal_elements = np.diagonal(array) # Returns a list of the diagonal of an array
+
+    diagonal_average = np.average(np.diagonal(array)) # Returns the mean of the elements of an array
+
+    # Create a mask for the diagonal elements
+    mask = np.eye(array.shape[0], dtype=int)
+    weights = np.ones_like(array, dtype=float)
+    weights[mask] = 0  # Set diagonal weights to 0
+
+    # Compute the weighted average excluding the diagonal elements
+    non_diagonal_elements_average = np.average(array, weights=weights)
+
+    return diagonal_average, non_diagonal_elements_average
+
+embedding_vectors_valdataset = embedding_vectors(val_dataset)
+confusion_matrix = confusion_similarity_matrix(embedding_vectors_valdataset)
+res_confusion_matrix = diagonal_non_diagonal_mean(confusion_matrix)
+print(res_confusion_matrix)
+print(confusion_matrix.shape)
+exit()
 #%% Training
 
 
@@ -182,7 +251,9 @@ siamese_model.compile(optimizer=optimizers.Adam(0.0001))
 siamese_model.summary()
 # If we want to troubleshoot problems, we might want to use smaller epochs and smaller batch sizes so that we can make sure that it is not overloading the system.
 
-siamese_model.fit(train_dataset, epochs=2, validation_data=val_dataset, batch_size=1)
+history = siamese_model.fit(train_dataset, epochs=10, validation_data=val_dataset, batch_size=1)
+
+print(history.history.keys())
 
 # Saving the model in my local directory
 # savedir = Path("/mnt/c/Users/joshu/Desktop/TFG/DeepLearningCryo/Siamese_Network_Loss_Function/siamesetlktrained/")
