@@ -39,7 +39,8 @@ target_shape = (100, 100)
 
 # Paths! 
 cache_dir = Path("/mnt/c/Users/joshu/Desktop/TFG/DeepLearningCryo/Siamese_Network_Loss_Function/data/")
-images_path = [cache_dir / "clear1", cache_dir / "clear2", cache_dir / "clear3", cache_dir / "clear4"]
+# images_path = [cache_dir / "clear1", cache_dir / "clear2", cache_dir / "clear3", cache_dir / "clear4"]
+images_path = [cache_dir / "noisy1", cache_dir / "noisy2", cache_dir / "noisy3", cache_dir / "noisy4"]
 
 # anchor_images_path = cache_dir / "clear1"
 # other_folders = [cache_dir / "clear2", cache_dir / "clear3", cache_dir / "clear4"]
@@ -56,7 +57,7 @@ def preprocess_image(filename):
     image = tf.image.resize(image, target_shape)
     return image
 
-def preprocess_triplets(anchor, positive, negative):
+def preprocess_triplets(anchor, positive, negative, labels):
     """
     Given the filenames corresponding to the three images, load and
     preprocess them.
@@ -66,11 +67,13 @@ def preprocess_triplets(anchor, positive, negative):
     positive_image, positive_label = positive
     negative_image, negative_label = negative
 
+    # The original function only had the first part of the tuple but since I want to know
+    # The labels of each image, I had to modify it a little bit
     return (
-        preprocess_image(anchor_image),
-        preprocess_image(positive_image),
-        preprocess_image(negative_image),
-    ), (anchor_label, positive_label, negative_label)
+        preprocess_image(anchor),
+        preprocess_image(positive),
+        preprocess_image(negative),
+    ), labels
 
 # Use this seed so we can use reproducibility
 random.seed(42)
@@ -92,8 +95,12 @@ def get_random_image_from_folders(folders, num_images):
                                                                         # If we use the append method, it will add a list inside the list
     return [random.choice(all_images) for _ in range(num_images)]
 
-# This function is to automize the creation of dataset to be able to create a larger dataset
-# Since we want to use not only one class 
+"""
+This function is to automize the creation of dataset to be able to create a larger 
+dataset since we want to use not only one class. It also includes a label variable that
+makes sure we know what class they came from.
+"""
+
 def create_dataset(list_of_image_paths):
 
     anchor_images = []
@@ -128,12 +135,15 @@ image_count = len(anchor_images)
 
 
 # Create the dataset for TensorFlow
-anchor_dataset = tf.data.Dataset.from_tensor_slices((anchor_images, labels))
-positive_dataset = tf.data.Dataset.from_tensor_slices((positive_images, labels))
-negative_dataset = tf.data.Dataset.from_tensor_slices((negative_images, labels))
+anchor_dataset = tf.data.Dataset.from_tensor_slices(anchor_images)
+positive_dataset = tf.data.Dataset.from_tensor_slices(positive_images)
+negative_dataset = tf.data.Dataset.from_tensor_slices(negative_images)
 negative_dataset = negative_dataset.shuffle(buffer_size=4096)
+label_dataset = tf.data.Dataset.from_tensor_slices(labels)
 
-dataset = tf.data.Dataset.zip((anchor_dataset, positive_dataset, negative_dataset))
+
+
+dataset = tf.data.Dataset.zip((anchor_dataset, positive_dataset, negative_dataset, label_dataset))
 dataset = dataset.shuffle(buffer_size=1024)
 dataset = dataset.map(preprocess_triplets)
 
@@ -205,44 +215,44 @@ siamese_network = Model(
     inputs=[anchor_input, positive_input, negative_input], outputs=distances
 )
 
-# Extract embeddings and labels from val_dataset
-embeddings = []
-labels = []
+# Extract embeddings sorted into different classes from val_dataset
+def extract_embeddings(dataset):
+    embeddings = []
+    labels = []
 
-for (anchor, positive, negative), (anchor_label, positive_label, negative_label) in val_dataset:
-    anchor_embeddings = embedding(resnet.preprocess_input(anchor))  # Obtain embeddings from your model
-    embeddings.extend(anchor_embeddings.numpy())
-    labels.extend(anchor_label.numpy())  # Collect labels for grouping
+    for samples, labelss in dataset:
+        anchor, _, _ = samples
+        anchor_label = labelss
+        anchor_embeddings = embedding(resnet.preprocess_input(anchor))  # Obtain embeddings from your model
+        embeddings.extend(anchor_embeddings.numpy())
+        labels.extend(anchor_label.numpy())  # Collect labels for grouping
 
-# Organize embeddings by class
-class_embeddings = {}
-for embedding, label in zip(embeddings, labels):
-    if label not in class_embeddings:
-        class_embeddings[label] = []
-    class_embeddings[label].append(embedding)
+    print(np.array(embeddings).shape)
 
-for key, value in class_embeddings.items():
-    #print value
-    print(key, len([item for item in value if item]))
+    # Organize embeddings by class
+    class_embeddings = {}
+    for embedding_ind, label in zip(embeddings, labels):
+        if label not in class_embeddings:
+            class_embeddings[label] = []
+        class_embeddings[label].append(embedding_ind)
 
-exit()
+    # Create the resulting list
+    embedding_vectors_result = []
 
-# Create a list of the embedding vectors given a TensorFlow dataset
-def embedding_vectors(dataset):
+    min_length = min(len(values) for values in class_embeddings.values())
 
-    embedding_vectors = []
-    for sample in dataset:
-        sample_image, _, _ = sample
-        sample_image_embedding = embedding(resnet.preprocess_input(sample_image)) 
-        embedding_vectors.extend(sample_image_embedding)
-        print(len(embedding_vectors[0]))
-        # It goes through this loop 11 times: 11x32
+    for key in sorted(class_embeddings.keys()):  # Ensure order of keys is consistent
+        # Randomly select x elements from the list corresponding to the current key
+        # This is important since the CosineSimilarity receives input in batches
 
-    return embedding_vectors
+        selected_arrays = random.sample(class_embeddings[key], min_length)
+        embedding_vectors_result.append(selected_arrays)
+
+    return np.array(embedding_vectors_result)
 
 def confusion_similarity_matrix(embedding_vectors):
     cosine_similarity = metrics.CosineSimilarity()
-    num_embeddings = int(len(embedding_vectors)/32)
+    num_embeddings = embedding_vectors.shape[0]
     similarity_matrix = np.zeros((num_embeddings, num_embeddings))
 
     for i in range(num_embeddings):
@@ -270,12 +280,7 @@ def diagonal_non_diagonal_mean(array):
 
     return diagonal_average, non_diagonal_elements_average
 
-embedding_vectors_valdataset = embedding_vectors(val_dataset)
-confusion_matrix = confusion_similarity_matrix(embedding_vectors_valdataset)
-res_confusion_matrix = diagonal_non_diagonal_mean(confusion_matrix)
-print(res_confusion_matrix)
-print(confusion_matrix.shape)
-exit()
+
 #%% Training
 
 
@@ -284,7 +289,8 @@ siamese_model.compile(optimizer=optimizers.Adam(0.0001))
 siamese_model.summary()
 # If we want to troubleshoot problems, we might want to use smaller epochs and smaller batch sizes so that we can make sure that it is not overloading the system.
 
-history = siamese_model.fit(train_dataset, epochs=10, validation_data=val_dataset, batch_size=1)
+train_triplets, labels = strain_dataset
+history = siamese_model.fit(train_dataset[0], epochs=10, validation_data=val_dataset[0], batch_size=1)
 
 print(history.history.keys())
 
@@ -301,6 +307,16 @@ print(history.history.keys())
 
 sample = next(iter(train_dataset))
 # visualize(*sample)
+
+
+embedding_vectors_valdataset = extract_embeddings(val_dataset)
+confusion_matrix = confusion_similarity_matrix(embedding_vectors_valdataset)
+res_confusion_matrix = diagonal_non_diagonal_mean(confusion_matrix)
+print(confusion_matrix)
+
+
+print(res_confusion_matrix)
+print(confusion_matrix.shape)
 
 
 anchor, positive, negative = sample

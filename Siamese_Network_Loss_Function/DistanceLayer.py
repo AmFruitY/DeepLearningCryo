@@ -23,10 +23,21 @@ class DistanceLayer(layers.Layer):
     negative embedding.
     """
 
+    """ * The original code was done using 
+    """
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
     def call(self, anchor, positive, negative):
-        ap_distance = ops.sum(tf.square(anchor - positive), -1)
-        an_distance = ops.sum(tf.square(anchor - negative), -1)
+
+        cosine_similarity = metrics.CosineSimilarity() # We want the to train it using the cosine similarity since
+                                                    # it is the metric that we will be using to evaluate the similarity
+
+        ap_distance = cosine_similarity(anchor, positive)
+        an_distance = cosine_similarity(anchor, negative)
+
+        # The commented part of this code is the Euclidean distance.
+        # ap_distance = ops.sum(tf.square(anchor - positive), -1)
+        # an_distance = ops.sum(tf.square(anchor - negative), -1)
         return (ap_distance, an_distance)
