@@ -12,6 +12,7 @@ from keras import optimizers
 from keras import metrics
 from keras import Model
 from keras.applications import resnet
+import copy
 
 # Hides warning to rebuild TensorFlow
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
@@ -63,17 +64,12 @@ def preprocess_triplets(anchor, positive, negative, labels):
     preprocess them.
     """
 
-    anchor_image, anchor_label = anchor
-    positive_image, positive_label = positive
-    negative_image, negative_label = negative
-
     # The original function only had the first part of the tuple but since I want to know
     # The labels of each image, I had to modify it a little bit
     return (
         preprocess_image(anchor),
         preprocess_image(positive),
-        preprocess_image(negative),
-    ), labels
+        preprocess_image(negative), labels, )
 
 # Use this seed so we can use reproducibility
 random.seed(42)
@@ -131,16 +127,15 @@ def create_dataset(list_of_image_paths):
 
 anchor_images, positive_images, negative_images, labels = create_dataset(images_path)
 
-image_count = len(anchor_images)
 
+image_count = len(anchor_images)
 
 # Create the dataset for TensorFlow
 anchor_dataset = tf.data.Dataset.from_tensor_slices(anchor_images)
 positive_dataset = tf.data.Dataset.from_tensor_slices(positive_images)
 negative_dataset = tf.data.Dataset.from_tensor_slices(negative_images)
-negative_dataset = negative_dataset.shuffle(buffer_size=4096)
+# negative_dataset = negative_dataset.shuffle(buffer_size=4096)
 label_dataset = tf.data.Dataset.from_tensor_slices(labels)
-
 
 
 dataset = tf.data.Dataset.zip((anchor_dataset, positive_dataset, negative_dataset, label_dataset))
@@ -151,11 +146,23 @@ dataset = dataset.map(preprocess_triplets)
 train_dataset = dataset.take(round(image_count * 0.8))
 val_dataset = dataset.skip(round(image_count * 0.8))
 
-train_dataset = train_dataset.batch(32, drop_remainder=False) # If the last batch is smaller than 32, then it drops it.
-train_dataset = train_dataset.prefetch(tf.data.AUTOTUNE)
+# Saving this dataset to calculate the confusion matrix for later, since we want to know the labels
+val_dataset_conf = dataset.skip(round(image_count * 0.8))
+
+# Selecting only the first three elements of the tuple before passing batching - in other words ignoring the labels
+train_dataset = train_dataset.map(lambda anchor, positive, negative, label: (anchor, positive, negative))
+val_dataset = val_dataset.map(lambda anchor, positive, negative, label: (anchor, positive, negative))
+
+# We will batch the data to make the training more efficient
+train_dataset = train_dataset.batch(32, drop_remainder=False) # If TRUE the last batch is smaller than 32, then it drops it.
+train_dataset = train_dataset.prefetch(tf.data.AUTOTUNE) # This just means that it prepares the later data for more efficient training
 
 val_dataset = val_dataset.batch(32, drop_remainder=False)
 val_dataset = val_dataset.prefetch(tf.data.AUTOTUNE)
+
+val_dataset_conf = val_dataset_conf.batch(32, drop_remainder=False)
+val_dataset_conf = val_dataset_conf.prefetch(tf.data.AUTOTUNE)
+
 
 def visualize(anchor, positive, negative):
     """Visualize a few triplets from the supplied batches."""
@@ -176,7 +183,7 @@ def visualize(anchor, positive, negative):
     plt.show()
 
 
-# visualize(*list(train_dataset.take(1).as_numpy_iterator())[0])
+visualize(*list(train_dataset.take(1).as_numpy_iterator())[0])
 
 #%% Setting the embedding model
 
@@ -215,14 +222,38 @@ siamese_network = Model(
     inputs=[anchor_input, positive_input, negative_input], outputs=distances
 )
 
+#%% Training
+
+
+siamese_model = SiameseModel(siamese_network)
+siamese_model.compile(optimizer=optimizers.Adam(0.0001))
+siamese_model.summary()
+# If we want to troubleshoot problems, we might want to use smaller epochs and smaller batch sizes so that we can make sure that it is not overloading the system.
+
+# train_triplets, labels = strain_dataset
+history = siamese_model.fit(train_dataset, epochs=10, validation_data=val_dataset, batch_size=1)
+
+print(history.history.keys())
+
+# Saving the model in my local directory
+# savedir = Path("/mnt/c/Users/joshu/Desktop/TFG/DeepLearningCryo/Siamese_Network_Loss_Function/siamesetlktrained/")
+# siamese_model.save(savedir)
+
+# Saving the model weights in my local directory
+# saveweightsdir = Path("/mnt/c/Users/joshu/Desktop/TFG/DeepLearningCryo/Siamese_Network_Loss_Function/siamesetlktrainedweights/")
+# siamese_model.save_weights(saveweightsdir)
+
+exit()
+#%% Inspecting
+
 # Extract embeddings sorted into different classes from val_dataset
 def extract_embeddings(dataset):
     embeddings = []
     labels = []
 
-    for samples, labelss in dataset:
-        anchor, _, _ = samples
-        anchor_label = labelss
+    for samples in dataset:
+        anchor, _, _, label = samples
+
         anchor_embeddings = embedding(resnet.preprocess_input(anchor))  # Obtain embeddings from your model
         embeddings.extend(anchor_embeddings.numpy())
         labels.extend(anchor_label.numpy())  # Collect labels for grouping
@@ -281,43 +312,17 @@ def diagonal_non_diagonal_mean(array):
     return diagonal_average, non_diagonal_elements_average
 
 
-#%% Training
-
-
-siamese_model = SiameseModel(siamese_network)
-siamese_model.compile(optimizer=optimizers.Adam(0.0001))
-siamese_model.summary()
-# If we want to troubleshoot problems, we might want to use smaller epochs and smaller batch sizes so that we can make sure that it is not overloading the system.
-
-train_triplets, labels = strain_dataset
-history = siamese_model.fit(train_dataset[0], epochs=10, validation_data=val_dataset[0], batch_size=1)
-
-print(history.history.keys())
-
-# Saving the model in my local directory
-# savedir = Path("/mnt/c/Users/joshu/Desktop/TFG/DeepLearningCryo/Siamese_Network_Loss_Function/siamesetlktrained/")
-# siamese_model.save(savedir)
-
-# Saving the model weights in my local directory
-# saveweightsdir = Path("/mnt/c/Users/joshu/Desktop/TFG/DeepLearningCryo/Siamese_Network_Loss_Function/siamesetlktrainedweights/")
-# siamese_model.save_weights(saveweightsdir)
-
-
-#%% Inspecting
-
-sample = next(iter(train_dataset))
-# visualize(*sample)
 
 
 embedding_vectors_valdataset = extract_embeddings(val_dataset)
 confusion_matrix = confusion_similarity_matrix(embedding_vectors_valdataset)
 res_confusion_matrix = diagonal_non_diagonal_mean(confusion_matrix)
 print(confusion_matrix)
-
-
 print(res_confusion_matrix)
 print(confusion_matrix.shape)
 
+sample = next(iter(train_dataset))
+# visualize(*sample)
 
 anchor, positive, negative = sample
 anchor_embedding, positive_embedding, negative_embedding = (

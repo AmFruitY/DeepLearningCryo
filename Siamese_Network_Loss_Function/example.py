@@ -136,7 +136,6 @@ def visualize(anchor, positive, negative):
 
 visualize(*list(train_dataset.take(1).as_numpy_iterator())[0])
 
-exit()
 #%% Setting the embedding model - Transform the input data into lower dimensional representation known as embedding vector
 # The concept we looked at the first day
 
