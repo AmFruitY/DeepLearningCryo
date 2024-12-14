@@ -11,6 +11,7 @@ from keras import ops
 from keras import optimizers
 from keras import metrics
 from keras import Model
+from keras import callbacks
 from keras.applications import resnet
 import copy
 
@@ -40,8 +41,8 @@ target_shape = (100, 100)
 
 # Paths! 
 cache_dir = Path("/mnt/c/Users/joshu/Desktop/TFG/DeepLearningCryo/Siamese_Network_Loss_Function/data/")
-# images_path = [cache_dir / "clear1", cache_dir / "clear2", cache_dir / "clear3", cache_dir / "clear4"]
-images_path = [cache_dir / "noisy1", cache_dir / "noisy2", cache_dir / "noisy3", cache_dir / "noisy4"]
+images_path = [cache_dir / "clear1", cache_dir / "clear2", cache_dir / "clear3", cache_dir / "clear4"]
+# images_path = [cache_dir / "noisy1", cache_dir / "noisy2", cache_dir / "noisy3", cache_dir / "noisy4"]
 
 # anchor_images_path = cache_dir / "clear1"
 # other_folders = [cache_dir / "clear2", cache_dir / "clear3", cache_dir / "clear4"]
@@ -134,7 +135,7 @@ image_count = len(anchor_images)
 anchor_dataset = tf.data.Dataset.from_tensor_slices(anchor_images)
 positive_dataset = tf.data.Dataset.from_tensor_slices(positive_images)
 negative_dataset = tf.data.Dataset.from_tensor_slices(negative_images)
-# negative_dataset = negative_dataset.shuffle(buffer_size=4096)
+negative_dataset = negative_dataset.shuffle(buffer_size=4096)
 label_dataset = tf.data.Dataset.from_tensor_slices(labels)
 
 
@@ -154,13 +155,13 @@ train_dataset = train_dataset.map(lambda anchor, positive, negative, label: (anc
 val_dataset = val_dataset.map(lambda anchor, positive, negative, label: (anchor, positive, negative))
 
 # We will batch the data to make the training more efficient
-train_dataset = train_dataset.batch(32, drop_remainder=False) # If TRUE the last batch is smaller than 32, then it drops it.
+train_dataset = train_dataset.batch(16, drop_remainder=False) # If TRUE the last batch is smaller than 32, then it drops it.
 train_dataset = train_dataset.prefetch(tf.data.AUTOTUNE) # This just means that it prepares the later data for more efficient training
 
-val_dataset = val_dataset.batch(32, drop_remainder=False)
+val_dataset = val_dataset.batch(16, drop_remainder=False)
 val_dataset = val_dataset.prefetch(tf.data.AUTOTUNE)
 
-val_dataset_conf = val_dataset_conf.batch(32, drop_remainder=False)
+val_dataset_conf = val_dataset_conf.batch(16, drop_remainder=False)
 val_dataset_conf = val_dataset_conf.prefetch(tf.data.AUTOTUNE)
 
 
@@ -186,6 +187,11 @@ def visualize(anchor, positive, negative):
 visualize(*list(train_dataset.take(1).as_numpy_iterator())[0])
 
 #%% Setting the embedding model
+
+# Before anything to optimize the epoch number of training, we will be using the technique of Early-Stopping
+# Since the number of epochs determine quite substancially the difference in magnitude of the confusion matrix
+
+callback = callbacks.EarlyStopping(monitor='loss')
 
 base_cnn = resnet.ResNet50(
     weights="imagenet", input_shape=target_shape + (3,), include_top=False
@@ -226,12 +232,12 @@ siamese_network = Model(
 
 
 siamese_model = SiameseModel(siamese_network)
-siamese_model.compile(optimizer=optimizers.Adam(0.0001))
+siamese_model.compile(optimizer=optimizers.Adam(0.00001))
 siamese_model.summary()
 # If we want to troubleshoot problems, we might want to use smaller epochs and smaller batch sizes so that we can make sure that it is not overloading the system.
 
 # train_triplets, labels = strain_dataset
-history = siamese_model.fit(train_dataset, epochs=10, validation_data=val_dataset, batch_size=1)
+history = siamese_model.fit(train_dataset, epochs=10, validation_data=val_dataset, batch_size=16)
 
 print(history.history.keys())
 
@@ -243,7 +249,6 @@ print(history.history.keys())
 # saveweightsdir = Path("/mnt/c/Users/joshu/Desktop/TFG/DeepLearningCryo/Siamese_Network_Loss_Function/siamesetlktrainedweights/")
 # siamese_model.save_weights(saveweightsdir)
 
-exit()
 #%% Inspecting
 
 # Extract embeddings sorted into different classes from val_dataset
@@ -255,10 +260,9 @@ def extract_embeddings(dataset):
         anchor, _, _, label = samples
 
         anchor_embeddings = embedding(resnet.preprocess_input(anchor))  # Obtain embeddings from your model
+        anchor_embeddings = tf.linalg.l2_normalize(anchor_embeddings, axis = 1)
         embeddings.extend(anchor_embeddings.numpy())
-        labels.extend(anchor_label.numpy())  # Collect labels for grouping
-
-    print(np.array(embeddings).shape)
+        labels.extend(label.numpy())  # Collect labels for grouping
 
     # Organize embeddings by class
     class_embeddings = {}
@@ -289,6 +293,8 @@ def confusion_similarity_matrix(embedding_vectors):
     for i in range(num_embeddings):
         for j in range(num_embeddings):
             similarity = cosine_similarity(embedding_vectors[i], embedding_vectors[j])
+            print(i,j)
+            print(similarity.numpy())
             similarity_matrix[i, j] = similarity.numpy()
 
 
@@ -314,12 +320,20 @@ def diagonal_non_diagonal_mean(array):
 
 
 
-embedding_vectors_valdataset = extract_embeddings(val_dataset)
+embedding_vectors_valdataset = extract_embeddings(val_dataset_conf)
 confusion_matrix = confusion_similarity_matrix(embedding_vectors_valdataset)
 res_confusion_matrix = diagonal_non_diagonal_mean(confusion_matrix)
 print(confusion_matrix)
 print(res_confusion_matrix)
 print(confusion_matrix.shape)
+
+fig, ax = plt.subplots()
+im = ax.imshow(confusion_matrix, cmap=plt.get_cmap('hot'))
+fig.colorbar(im)
+plt.show()
+
+
+exit()
 
 sample = next(iter(train_dataset))
 # visualize(*sample)

@@ -31,13 +31,13 @@ class DistanceLayer(layers.Layer):
 
     def call(self, anchor, positive, negative):
 
-        cosine_similarity = metrics.CosineSimilarity() # We want the to train it using the cosine similarity since
+        # cosine_similarity = metrics.CosineSimilarity() # We want the to train it using the cosine similarity since
                                                     # it is the metric that we will be using to evaluate the similarity
 
-        ap_distance = cosine_similarity(anchor, positive)
-        an_distance = cosine_similarity(anchor, negative)
+        # ap_distance = cosine_similarity(anchor, positive)
+        # an_distance = cosine_similarity(anchor, negative)
 
         # The commented part of this code is the Euclidean distance.
-        # ap_distance = ops.sum(tf.square(anchor - positive), -1)
-        # an_distance = ops.sum(tf.square(anchor - negative), -1)
+        ap_distance = ops.sum(tf.square(anchor - positive), -1)
+        an_distance = ops.sum(tf.square(anchor - negative), -1)
         return (ap_distance, an_distance)
