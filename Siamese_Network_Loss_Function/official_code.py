@@ -41,8 +41,8 @@ target_shape = (100, 100)
 
 # Paths! 
 cache_dir = Path("/mnt/c/Users/joshu/Desktop/TFG/DeepLearningCryo/Siamese_Network_Loss_Function/data/")
-images_path = [cache_dir / "clear1", cache_dir / "clear2", cache_dir / "clear3", cache_dir / "clear4"]
-# images_path = [cache_dir / "noisy1", cache_dir / "noisy2", cache_dir / "noisy3", cache_dir / "noisy4"]
+# images_path = [cache_dir / "clear1", cache_dir / "clear2", cache_dir / "clear3", cache_dir / "clear4"]
+images_path = [cache_dir / "noisy1", cache_dir / "noisy2", cache_dir / "noisy3", cache_dir / "noisy4"]
 
 # anchor_images_path = cache_dir / "clear1"
 # other_folders = [cache_dir / "clear2", cache_dir / "clear3", cache_dir / "clear4"]
@@ -135,7 +135,7 @@ image_count = len(anchor_images)
 anchor_dataset = tf.data.Dataset.from_tensor_slices(anchor_images)
 positive_dataset = tf.data.Dataset.from_tensor_slices(positive_images)
 negative_dataset = tf.data.Dataset.from_tensor_slices(negative_images)
-negative_dataset = negative_dataset.shuffle(buffer_size=4096)
+# negative_dataset = negative_dataset.shuffle(buffer_size=4096)
 label_dataset = tf.data.Dataset.from_tensor_slices(labels)
 
 
@@ -155,13 +155,13 @@ train_dataset = train_dataset.map(lambda anchor, positive, negative, label: (anc
 val_dataset = val_dataset.map(lambda anchor, positive, negative, label: (anchor, positive, negative))
 
 # We will batch the data to make the training more efficient
-train_dataset = train_dataset.batch(16, drop_remainder=False) # If TRUE the last batch is smaller than 32, then it drops it.
+train_dataset = train_dataset.batch(8, drop_remainder=False) # If TRUE the last batch is smaller than 32, then it drops it.
 train_dataset = train_dataset.prefetch(tf.data.AUTOTUNE) # This just means that it prepares the later data for more efficient training
 
-val_dataset = val_dataset.batch(16, drop_remainder=False)
+val_dataset = val_dataset.batch(8, drop_remainder=False)
 val_dataset = val_dataset.prefetch(tf.data.AUTOTUNE)
 
-val_dataset_conf = val_dataset_conf.batch(16, drop_remainder=False)
+val_dataset_conf = val_dataset_conf.batch(8, drop_remainder=False)
 val_dataset_conf = val_dataset_conf.prefetch(tf.data.AUTOTUNE)
 
 
@@ -191,7 +191,7 @@ visualize(*list(train_dataset.take(1).as_numpy_iterator())[0])
 # Before anything to optimize the epoch number of training, we will be using the technique of Early-Stopping
 # Since the number of epochs determine quite substancially the difference in magnitude of the confusion matrix
 
-callback = callbacks.EarlyStopping(monitor='loss')
+callback = callbacks.EarlyStopping(monitor='loss', patience=1)
 
 base_cnn = resnet.ResNet50(
     weights="imagenet", input_shape=target_shape + (3,), include_top=False
@@ -237,12 +237,12 @@ siamese_model.summary()
 # If we want to troubleshoot problems, we might want to use smaller epochs and smaller batch sizes so that we can make sure that it is not overloading the system.
 
 # train_triplets, labels = strain_dataset
-history = siamese_model.fit(train_dataset, epochs=10, validation_data=val_dataset, batch_size=16)
+history = siamese_model.fit(train_dataset, epochs=10, validation_data=val_dataset, batch_size=8, callbacks=[callback])
 
 print(history.history.keys())
 
 # Saving the model in my local directory
-# savedir = Path("/mnt/c/Users/joshu/Desktop/TFG/DeepLearningCryo/Siamese_Network_Loss_Function/siamesetlktrained/")
+# savedir = Path("/mnt/c/Users/joshu/Desktop/TFG/DeepLearningCryo/Siamese_Network_Loss_Function/siamesetlktrained.h5")
 # siamese_model.save(savedir)
 
 # Saving the model weights in my local directory
@@ -250,6 +250,39 @@ print(history.history.keys())
 # siamese_model.save_weights(saveweightsdir)
 
 #%% Inspecting
+
+from sklearn.decomposition import PCA
+import matplotlib.pyplot as plt
+
+def visualize_embeddings(embeddings, labels):
+    """
+    Visualizes the embeddings in 2D space using PCA.
+    Args:
+        embeddings: List of embedding vectors.
+        labels: Corresponding labels for the embeddings.
+    """
+    embeddings = np.array(embeddings)  # Convert to numpy array if not already
+    labels = np.array(labels)
+
+    # Reduce dimensionality to 2D using PCA
+    pca = PCA(n_components=2)
+    reduced_embeddings = pca.fit_transform(embeddings)
+
+    # Plot the embeddings
+    plt.figure(figsize=(10, 8))
+    scatter = plt.scatter(
+        reduced_embeddings[:, 0],
+        reduced_embeddings[:, 1],
+        c=labels,
+        cmap='tab10',
+        alpha=0.7
+    )
+    plt.colorbar(scatter, label='Class Label')
+    plt.title("2D Visualization of Embeddings")
+    plt.xlabel("PCA Dimension 1")
+    plt.ylabel("PCA Dimension 2")
+    plt.show()
+
 
 # Extract embeddings sorted into different classes from val_dataset
 def extract_embeddings(dataset):
@@ -260,9 +293,12 @@ def extract_embeddings(dataset):
         anchor, _, _, label = samples
 
         anchor_embeddings = embedding(resnet.preprocess_input(anchor))  # Obtain embeddings from your model
-        anchor_embeddings = tf.linalg.l2_normalize(anchor_embeddings, axis = 1)
         embeddings.extend(anchor_embeddings.numpy())
         labels.extend(label.numpy())  # Collect labels for grouping
+
+    
+    # Visualize embeddings after extracting them
+    visualize_embeddings(embeddings, labels)
 
     # Organize embeddings by class
     class_embeddings = {}
@@ -285,6 +321,7 @@ def extract_embeddings(dataset):
 
     return np.array(embedding_vectors_result)
 
+
 def confusion_similarity_matrix(embedding_vectors):
     cosine_similarity = metrics.CosineSimilarity()
     num_embeddings = embedding_vectors.shape[0]
@@ -292,9 +329,7 @@ def confusion_similarity_matrix(embedding_vectors):
 
     for i in range(num_embeddings):
         for j in range(num_embeddings):
-            similarity = cosine_similarity(embedding_vectors[i], embedding_vectors[j])
-            print(i,j)
-            print(similarity.numpy())
+            similarity = cosine_similarity(tf.convert_to_tensor(embedding_vectors[i], dtype=tf.float64), tf.convert_to_tensor(embedding_vectors[j], dtype=tf.float64))
             similarity_matrix[i, j] = similarity.numpy()
 
 
