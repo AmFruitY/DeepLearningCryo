@@ -14,7 +14,7 @@ from keras import Model
 from keras.applications import resnet
 
 
-target_shape = (100, 100)
+target_shape = (128, 128)
 
 
 

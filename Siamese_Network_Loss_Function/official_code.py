@@ -14,6 +14,7 @@ from keras import Model
 from keras import callbacks
 from keras.applications import resnet
 import copy
+from sklearn.decomposition import PCA
 
 # Hides warning to rebuild TensorFlow
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
@@ -36,13 +37,13 @@ from DistanceLayer import DistanceLayer
 
 # The example target shape is 200, 200
 # I will be using 100,100 for the cryogenic molecules
-target_shape = (100, 100)
+target_shape = (128, 128)
 
-
+    
 # Paths! 
 cache_dir = Path("/mnt/c/Users/joshu/Desktop/TFG/DeepLearningCryo/Siamese_Network_Loss_Function/data/")
-# images_path = [cache_dir / "clear1", cache_dir / "clear2", cache_dir / "clear3", cache_dir / "clear4"]
-images_path = [cache_dir / "noisy1", cache_dir / "noisy2", cache_dir / "noisy3", cache_dir / "noisy4"]
+images_path = [cache_dir / "clear1", cache_dir / "clear2", cache_dir / "clear3", cache_dir / "clear4"]
+# images_path = [cache_dir / "noisy1", cache_dir / "noisy2", cache_dir / "noisy3", cache_dir / "noisy4"]
 
 # anchor_images_path = cache_dir / "clear1"
 # other_folders = [cache_dir / "clear2", cache_dir / "clear3", cache_dir / "clear4"]
@@ -239,20 +240,21 @@ siamese_model.summary()
 # train_triplets, labels = strain_dataset
 history = siamese_model.fit(train_dataset, epochs=10, validation_data=val_dataset, batch_size=8, callbacks=[callback])
 
-print(history.history.keys())
+plt.plot(history.history['loss'])
+plt.plot(history.history['val_loss'])
+plt.title('model loss')
+plt.ylabel('loss')
+plt.xlabel('epoch')
+plt.legend(['train', 'test'], loc='upper left')
+plt.show()
 
 # Saving the model in my local directory
-# savedir = Path("/mnt/c/Users/joshu/Desktop/TFG/DeepLearningCryo/Siamese_Network_Loss_Function/siamesetlktrained.h5")
+# savedir = Path("/mnt/c/Users/joshu/Desktop/TFG/DeepLearningCryo/Siamese_Network_Loss_Function/siamesetlktrained/161224.keras")
 # siamese_model.save(savedir)
 
 # Saving the model weights in my local directory
 # saveweightsdir = Path("/mnt/c/Users/joshu/Desktop/TFG/DeepLearningCryo/Siamese_Network_Loss_Function/siamesetlktrainedweights/")
 # siamese_model.save_weights(saveweightsdir)
-
-#%% Inspecting
-
-from sklearn.decomposition import PCA
-import matplotlib.pyplot as plt
 
 def visualize_embeddings(embeddings, labels):
     """
@@ -321,7 +323,6 @@ def extract_embeddings(dataset):
 
     return np.array(embedding_vectors_result)
 
-
 def confusion_similarity_matrix(embedding_vectors):
     cosine_similarity = metrics.CosineSimilarity()
     num_embeddings = embedding_vectors.shape[0]
@@ -331,6 +332,7 @@ def confusion_similarity_matrix(embedding_vectors):
         for j in range(num_embeddings):
             similarity = cosine_similarity(tf.convert_to_tensor(embedding_vectors[i], dtype=tf.float64), tf.convert_to_tensor(embedding_vectors[j], dtype=tf.float64))
             similarity_matrix[i, j] = similarity.numpy()
+            cosine_similarity.reset_state()
 
 
     return np.array(similarity_matrix)
@@ -369,21 +371,3 @@ plt.show()
 
 
 exit()
-
-sample = next(iter(train_dataset))
-# visualize(*sample)
-
-anchor, positive, negative = sample
-anchor_embedding, positive_embedding, negative_embedding = (
-    embedding(resnet.preprocess_input(anchor)),
-    embedding(resnet.preprocess_input(positive)),
-    embedding(resnet.preprocess_input(negative)),
-)
-
-cosine_similarity = metrics.CosineSimilarity()
-
-positive_similarity = cosine_similarity(anchor_embedding, positive_embedding)
-print("Positive similarity:", positive_similarity.numpy())
-
-negative_similarity = cosine_similarity(anchor_embedding, negative_embedding)
-print("Negative similarity", negative_similarity.numpy())
