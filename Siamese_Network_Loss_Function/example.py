@@ -15,6 +15,7 @@ from keras.applications import resnet
 
 # Hides warning to rebuild TensorFlow
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
+os.environ["QT_DEBUG_PLUGINS"] = '0'
 
 from keras import mixed_precision
 
@@ -195,7 +196,7 @@ siamese_model.fit(train_dataset, epochs=2, validation_data=val_dataset)
 #%% Inspecting
 
 sample = next(iter(train_dataset))
-visualize(*sample)
+# visualize(*sample)
 
 
 anchor, positive, negative = sample

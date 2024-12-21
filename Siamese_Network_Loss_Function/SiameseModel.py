@@ -14,7 +14,8 @@ from keras import Model
 from keras.applications import resnet
 
 
-target_shape = (200, 200)
+target_shape = (128, 128)
+
 
 
 
@@ -71,7 +72,6 @@ class SiameseModel(Model):
         # the negative example.
         ap_distance, an_distance = self.siamese_network(data)
 
-        # TRIPLET LOSS
         # Computing the Triplet Loss by subtracting both distances and
         # making sure we don't get a negative value.
         loss = ap_distance - an_distance
