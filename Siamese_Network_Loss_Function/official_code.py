@@ -192,7 +192,7 @@ visualize(*list(train_dataset.take(1).as_numpy_iterator())[0])
 # Before anything to optimize the epoch number of training, we will be using the technique of Early-Stopping
 # Since the number of epochs determine quite substancially the difference in magnitude of the confusion matrix
 
-callback = callbacks.EarlyStopping(monitor='loss', patience=1)
+callback = callbacks.EarlyStopping(monitor='loss', patience=2)
 
 base_cnn = resnet.ResNet50(
     weights="imagenet", input_shape=target_shape + (3,), include_top=False
@@ -238,7 +238,7 @@ siamese_model.summary()
 # If we want to troubleshoot problems, we might want to use smaller epochs and smaller batch sizes so that we can make sure that it is not overloading the system.
 
 # train_triplets, labels = strain_dataset
-history = siamese_model.fit(train_dataset, epochs=10, validation_data=val_dataset, batch_size=8, callbacks=[callback])
+history = siamese_model.fit(train_dataset, epochs=20, validation_data=val_dataset, batch_size=8, callbacks=[callback])
 
 plt.plot(history.history['loss'])
 plt.plot(history.history['val_loss'])
