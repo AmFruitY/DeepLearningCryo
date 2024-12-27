@@ -14,8 +14,9 @@ from keras import Model
 from keras.applications import resnet
 
 
-target_shape = (200, 200)
+target_shape = (128, 128)
 
+    
 class DistanceLayer(layers.Layer):
     """
     This layer is responsible for computing the distance between the anchor
@@ -41,3 +42,13 @@ class DistanceLayer(layers.Layer):
         ap_distance = ops.sum(tf.square(anchor - positive), -1)
         an_distance = ops.sum(tf.square(anchor - negative), -1)
         return (ap_distance, an_distance)
+
+    def get_config(self):
+        # Return the config dictionary
+        config = super().get_config()
+        return config
+
+    @classmethod
+    def from_config(cls, config):
+        # Create the layer from the config dictionary
+        return cls(**config)

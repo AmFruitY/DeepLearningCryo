@@ -16,6 +16,10 @@ from keras.applications import resnet
 import copy
 from sklearn.decomposition import PCA
 
+# Classes
+from SiameseModel import SiameseModel
+from DistanceLayer import DistanceLayer
+
 # Hides warning to rebuild TensorFlow
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
@@ -31,14 +35,9 @@ physical_devices = tf.config.experimental.list_physical_devices('GPU')
 if len(physical_devices) > 0:
     tf.config.experimental.set_memory_growth(physical_devices[0], True)
 
-# Classes
-from SiameseModel import SiameseModel
-from DistanceLayer import DistanceLayer
-
 # The example target shape is 200, 200
 # I will be using 100,100 for the cryogenic molecules
 target_shape = (128, 128)
-
     
 # Paths! 
 cache_dir = Path("/mnt/c/Users/joshu/Desktop/TFG/DeepLearningCryo/Siamese_Network_Loss_Function/data/")
@@ -92,6 +91,7 @@ def get_random_image_from_folders(folders, num_images):
         all_images.extend([str(folder / f) for f in os.listdir(folder)]) # We use extend here to add the element to the back of the list
                                                                         # If we use the append method, it will add a list inside the list
     return [random.choice(all_images) for _ in range(num_images)]
+
 
 """
 This function is to automize the creation of dataset to be able to create a larger 
@@ -234,11 +234,12 @@ siamese_network = Model(
 
 siamese_model = SiameseModel(siamese_network)
 siamese_model.compile(optimizer=optimizers.Adam(0.00001))
-siamese_model.summary()
 # If we want to troubleshoot problems, we might want to use smaller epochs and smaller batch sizes so that we can make sure that it is not overloading the system.
 
 # train_triplets, labels = strain_dataset
 history = siamese_model.fit(train_dataset, epochs=20, validation_data=val_dataset, batch_size=8, callbacks=[callback])
+
+siamese_model.summary()  # Check the summary
 
 plt.plot(history.history['loss'])
 plt.plot(history.history['val_loss'])
@@ -248,126 +249,27 @@ plt.xlabel('epoch')
 plt.legend(['train', 'test'], loc='upper left')
 plt.show()
 
+
+# Build the model by calling it on dummy data
+dummy_input = [tf.random.uniform((1, 128, 128, 3)) for _ in range(3)]  # Example for triplet inputs
+siamese_model(dummy_input)
+
+
 # Saving the model in my local directory
-# savedir = Path("/mnt/c/Users/joshu/Desktop/TFG/DeepLearningCryo/Siamese_Network_Loss_Function/siamesetlktrained/161224.keras")
-# siamese_model.save(savedir)
+# savedir_h5 = Path("/mnt/c/Users/joshu/Desktop/TFG/DeepLearningCryo/Siamese_Network_Loss_Function/siamesetlktrained/211224.h5")
+# siamese_model.save(savedir_h5, include_optimizer=False)
+# savedir_keras = Path("/mnt/c/Users/joshu/Desktop/TFG/DeepLearningCryo/Siamese_Network_Loss_Function/siamesetlktrained/211224.keras")
+# siamese_model.save(savedir_keras, include_optimizer=False)
+
+
+embedding_h5 = Path("/mnt/c/Users/joshu/Desktop/TFG/DeepLearningCryo/Siamese_Network_Loss_Function/siamesetlktrained/embedding.h5")
+embedding.save(embedding_h5, include_optimizer=False)
+embedding_keras = Path("/mnt/c/Users/joshu/Desktop/TFG/DeepLearningCryo/Siamese_Network_Loss_Function/siamesetlktrained/embedding.keras")
+embedding.save(embedding_keras, include_optimizer=False)
 
 # Saving the model weights in my local directory
-# saveweightsdir = Path("/mnt/c/Users/joshu/Desktop/TFG/DeepLearningCryo/Siamese_Network_Loss_Function/siamesetlktrainedweights/")
+# saveweightsdir = Path("/mnt/c/Users/joshu/Desktop/TFG/DeepLearningCryo/Siamese_Network_Loss_Function/siamesetlktrainedweights/211224.")
 # siamese_model.save_weights(saveweightsdir)
 
-def visualize_embeddings(embeddings, labels):
-    """
-    Visualizes the embeddings in 2D space using PCA.
-    Args:
-        embeddings: List of embedding vectors.
-        labels: Corresponding labels for the embeddings.
-    """
-    embeddings = np.array(embeddings)  # Convert to numpy array if not already
-    labels = np.array(labels)
 
-    # Reduce dimensionality to 2D using PCA
-    pca = PCA(n_components=2)
-    reduced_embeddings = pca.fit_transform(embeddings)
-
-    # Plot the embeddings
-    plt.figure(figsize=(10, 8))
-    scatter = plt.scatter(
-        reduced_embeddings[:, 0],
-        reduced_embeddings[:, 1],
-        c=labels,
-        cmap='tab10',
-        alpha=0.7
-    )
-    plt.colorbar(scatter, label='Class Label')
-    plt.title("2D Visualization of Embeddings")
-    plt.xlabel("PCA Dimension 1")
-    plt.ylabel("PCA Dimension 2")
-    plt.show()
-
-
-# Extract embeddings sorted into different classes from val_dataset
-def extract_embeddings(dataset):
-    embeddings = []
-    labels = []
-
-    for samples in dataset:
-        anchor, _, _, label = samples
-
-        anchor_embeddings = embedding(resnet.preprocess_input(anchor))  # Obtain embeddings from your model
-        embeddings.extend(anchor_embeddings.numpy())
-        labels.extend(label.numpy())  # Collect labels for grouping
-
-    
-    # Visualize embeddings after extracting them
-    visualize_embeddings(embeddings, labels)
-
-    # Organize embeddings by class
-    class_embeddings = {}
-    for embedding_ind, label in zip(embeddings, labels):
-        if label not in class_embeddings:
-            class_embeddings[label] = []
-        class_embeddings[label].append(embedding_ind)
-
-    # Create the resulting list
-    embedding_vectors_result = []
-
-    min_length = min(len(values) for values in class_embeddings.values())
-
-    for key in sorted(class_embeddings.keys()):  # Ensure order of keys is consistent
-        # Randomly select x elements from the list corresponding to the current key
-        # This is important since the CosineSimilarity receives input in batches
-
-        selected_arrays = random.sample(class_embeddings[key], min_length)
-        embedding_vectors_result.append(selected_arrays)
-
-    return np.array(embedding_vectors_result)
-
-def confusion_similarity_matrix(embedding_vectors):
-    cosine_similarity = metrics.CosineSimilarity()
-    num_embeddings = embedding_vectors.shape[0]
-    similarity_matrix = np.zeros((num_embeddings, num_embeddings))
-
-    for i in range(num_embeddings):
-        for j in range(num_embeddings):
-            similarity = cosine_similarity(tf.convert_to_tensor(embedding_vectors[i], dtype=tf.float64), tf.convert_to_tensor(embedding_vectors[j], dtype=tf.float64))
-            similarity_matrix[i, j] = similarity.numpy()
-            cosine_similarity.reset_state()
-
-
-    return np.array(similarity_matrix)
-
-# Returns the mean of the diagonal and the mean of the non-diagonal elements of a squared array.
-def diagonal_non_diagonal_mean(array):
-
-    diagonal_elements = np.diagonal(array) # Returns a list of the diagonal of an array
-
-    diagonal_average = np.average(np.diagonal(array)) # Returns the mean of the elements of an array
-
-    # Create a mask for the diagonal elements
-    mask = np.eye(array.shape[0], dtype=int)
-    weights = np.ones_like(array, dtype=float)
-    weights[mask] = 0  # Set diagonal weights to 0
-
-    # Compute the weighted average excluding the diagonal elements
-    non_diagonal_elements_average = np.average(array, weights=weights)
-
-    return diagonal_average, non_diagonal_elements_average
-
-
-
-
-embedding_vectors_valdataset = extract_embeddings(val_dataset_conf)
-confusion_matrix = confusion_similarity_matrix(embedding_vectors_valdataset)
-res_confusion_matrix = diagonal_non_diagonal_mean(confusion_matrix)
-print(confusion_matrix)
-print(res_confusion_matrix)
-print(confusion_matrix.shape)
-
-fig, ax = plt.subplots()
-im = ax.imshow(confusion_matrix, cmap=plt.get_cmap('hot'))
-fig.colorbar(im)
-plt.show()
-
-
-exit()
+# Average N-images
