@@ -41,8 +41,8 @@ target_shape = (128, 128)
     
 # Paths! 
 cache_dir = Path("/mnt/c/Users/joshu/Desktop/TFG/DeepLearningCryo/Siamese_Network_Loss_Function/data/")
-images_path = [cache_dir / "clear1", cache_dir / "clear2", cache_dir / "clear3", cache_dir / "clear4"]
-# images_path = [cache_dir / "noisy1", cache_dir / "noisy2", cache_dir / "noisy3", cache_dir / "noisy4"]
+# images_path = [cache_dir / "clear1", cache_dir / "clear2", cache_dir / "clear3", cache_dir / "clear4"]
+images_path = [cache_dir / "noisy1", cache_dir / "noisy2", cache_dir / "noisy3", cache_dir / "noisy4"]
 
 # anchor_images_path = cache_dir / "clear1"
 # other_folders = [cache_dir / "clear2", cache_dir / "clear3", cache_dir / "clear4"]
@@ -129,10 +129,9 @@ def create_dataset(list_of_image_paths):
 
 anchor_images, positive_images, negative_images, labels = create_dataset(images_path)
 
-
 image_count = len(anchor_images)
 
-# Create the dataset for TensorFlow
+# Create the dataset for TensorFlow - which are all paths to the said images
 anchor_dataset = tf.data.Dataset.from_tensor_slices(anchor_images)
 positive_dataset = tf.data.Dataset.from_tensor_slices(positive_images)
 negative_dataset = tf.data.Dataset.from_tensor_slices(negative_images)
@@ -142,7 +141,7 @@ label_dataset = tf.data.Dataset.from_tensor_slices(labels)
 
 dataset = tf.data.Dataset.zip((anchor_dataset, positive_dataset, negative_dataset, label_dataset))
 dataset = dataset.shuffle(buffer_size=1024)
-dataset = dataset.map(preprocess_triplets)
+dataset = dataset.map(preprocess_triplets) # Turn the paths into the images
 
 # Let's now split our dataset in train and validation.
 train_dataset = dataset.take(round(image_count * 0.8))
@@ -183,7 +182,6 @@ def visualize(anchor, positive, negative):
         show(axs[i, 2], negative[i])
 
     plt.show()
-
 
 visualize(*list(train_dataset.take(1).as_numpy_iterator())[0])
 
@@ -237,7 +235,7 @@ siamese_model.compile(optimizer=optimizers.Adam(0.00001))
 # If we want to troubleshoot problems, we might want to use smaller epochs and smaller batch sizes so that we can make sure that it is not overloading the system.
 
 # train_triplets, labels = strain_dataset
-history = siamese_model.fit(train_dataset, epochs=20, validation_data=val_dataset, batch_size=8, callbacks=[callback])
+history = siamese_model.fit(train_dataset, epochs=100, validation_data=val_dataset, batch_size=8, callbacks=[callback])
 
 siamese_model.summary()  # Check the summary
 
@@ -262,9 +260,9 @@ siamese_model(dummy_input)
 # siamese_model.save(savedir_keras, include_optimizer=False)
 
 
-embedding_h5 = Path("/mnt/c/Users/joshu/Desktop/TFG/DeepLearningCryo/Siamese_Network_Loss_Function/siamesetlktrained/embedding.h5")
+embedding_h5 = Path("/mnt/c/Users/joshu/Desktop/TFG/DeepLearningCryo/Siamese_Network_Loss_Function/siamesetlktrained/embedding_noisy.h5")
 embedding.save(embedding_h5, include_optimizer=False)
-embedding_keras = Path("/mnt/c/Users/joshu/Desktop/TFG/DeepLearningCryo/Siamese_Network_Loss_Function/siamesetlktrained/embedding.keras")
+embedding_keras = Path("/mnt/c/Users/joshu/Desktop/TFG/DeepLearningCryo/Siamese_Network_Loss_Function/siamesetlktrained/embedding_noisy.keras")
 embedding.save(embedding_keras, include_optimizer=False)
 
 # Saving the model weights in my local directory
@@ -273,3 +271,43 @@ embedding.save(embedding_keras, include_optimizer=False)
 
 
 # Average N-images
+
+N = 100
+list_images = get_random_image_from_folders(images_path, N)
+
+rand_image_to_avg = []
+counter = 0 
+for path in list_images:
+    image = np.float64(preprocess_image(path).numpy())
+    rand_image_to_avg.append(image)
+
+def compute_and_plot_average(images):
+    image_count = len(images) # We will use this to automate the step_checkpoint and not rely on our own inputs
+                                # Since we know that shuffling makes the number of training images random
+    step_checkpoint = image_count // 4 # We want an integer intead of a float
+
+    running_avg = np.zeros_like(images[0], dtype=np.float64)
+    checkpoints = [] 
+    plots = []  # List to store the running averages at checkpoints
+
+    for i, img in enumerate(images, start=1):
+        running_avg += (img - running_avg) / i
+        
+        # Save the current average at the checkpoints
+        if i % step_checkpoint == 0:
+            checkpoints.append(i)
+            plots.append(running_avg.copy())  # Save a copy at this iteration
+
+    # Plotting
+    fig, axes = plt.subplots(2, 2)  # Create 1x4 subplot grid
+    axes = axes.flatten()
+    for ax, avg, step in zip(axes, plots, checkpoints):
+        ax.imshow(avg)  # Convert to uint8 for visualization
+        ax.set_title(f"Iteration {step}")
+        ax.axis("off")  # Turn off axes
+
+    plt.tight_layout()
+    plt.show()
+    return running_avg
+
+compute_and_plot_average(rand_image_to_avg)

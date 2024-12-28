@@ -33,7 +33,7 @@ from DistanceLayer import DistanceLayer
 
 custom_objects = {'DistanceLayer': DistanceLayer, 'SiameseModel': SiameseModel}
 
-embedding_dir = Path("/mnt/c/Users/joshu/Desktop/TFG/DeepLearningCryo/Siamese_Network_Loss_Function/siamesetlktrained/embedding.keras")
+embedding_dir = Path("/mnt/c/Users/joshu/Desktop/TFG/DeepLearningCryo/Siamese_Network_Loss_Function/siamesetlktrained/embedding_noisy.keras")
 embedding = models.load_model(embedding_dir, custom_objects=custom_objects)
 
 
@@ -44,8 +44,8 @@ target_shape = (128, 128)
     
 # Paths! 
 cache_dir = Path("/mnt/c/Users/joshu/Desktop/TFG/DeepLearningCryo/Siamese_Network_Loss_Function/data/")
-images_path = [cache_dir / "clear1", cache_dir / "clear2", cache_dir / "clear3", cache_dir / "clear4"]
-# images_path = [cache_dir / "noisy1", cache_dir / "noisy2", cache_dir / "noisy3", cache_dir / "noisy4"]
+# images_path = [cache_dir / "clear1", cache_dir / "clear2", cache_dir / "clear3", cache_dir / "clear4"]
+images_path = [cache_dir / "noisy1", cache_dir / "noisy2", cache_dir / "noisy3", cache_dir / "noisy4"]
 
 # anchor_images_path = cache_dir / "clear1"
 # other_folders = [cache_dir / "clear2", cache_dir / "clear3", cache_dir / "clear4"]
@@ -130,7 +130,6 @@ def create_dataset(list_of_image_paths):
     return anchor_images, positive_images, negative_images, labels
 
 anchor_images, positive_images, negative_images, labels = create_dataset(images_path)
-
 
 image_count = len(anchor_images)
 
@@ -219,7 +218,15 @@ def visualize_embeddings(embeddings, labels):
     plt.show()
 
 
-# Extract embeddings sorted into different classes from val_dataset
+""" Extract embeddings sorted into different classes from val_dataset.
+
+    input:
+        dataset: It has to be a TensorFlow quadruplet (triplet with labels) dataset.
+    output:
+        embedding_vector_result: array The embeddings of the images in their respective classes
+        embeddings: array The embeddings without putting classifying.
+        images: array The images used in the dataset without classifying"""
+
 def extract_embeddings(dataset):
     images = []
     embeddings = []
@@ -256,7 +263,6 @@ def extract_embeddings(dataset):
         embedding_vectors_result.append(selected_arrays)
 
     return np.array(embedding_vectors_result), np.array(embeddings), np.array(images)
-
 
 def confusion_similarity_matrix(embedding_vectors):
     cosine_similarity = metrics.CosineSimilarity()
@@ -312,6 +318,7 @@ def finite_differences(x, y):
 
     return np.array(np.abs(der))
 
+"""Input: Embeddings without classification"""
 def optimize_k_means(data, max_k):
     means = []
     inertias = []
@@ -356,7 +363,6 @@ def optimize_k_means(data, max_k):
 
 embedding_vectors_valdataset = extract_embeddings(val_dataset_conf)
 optimize_k_means(embedding_vectors_valdataset[1], 8)
-exit()
 kmeans = KMeans(n_clusters=4, random_state=0, n_init="auto").fit(embedding_vectors_valdataset[1])
 images = embedding_vectors_valdataset[2]
 klabels = kmeans.labels_
@@ -412,28 +418,19 @@ def compute_and_plot_average(images):
     plt.show()
     return running_avg
 
-results = kmeans_images(images, klabels)
 
+# Results
+
+# After passing through K-means
+results = kmeans_images(images, klabels)
 compute_and_plot_average(results[0])
 compute_and_plot_average(results[1])
 compute_and_plot_average(results[2])
 compute_and_plot_average(results[3])
-exit()
 
-
-
-
-
-
-
-
-
-confusion_matrix = confusion_similarity_matrix(embedding_vectors_valdataset)
+# Not passing through k-means: Just a way to know that the model is correctly trained
+confusion_matrix = confusion_similarity_matrix(embedding_vectors_valdataset[0])
 res_confusion_matrix = diagonal_non_diagonal_mean(confusion_matrix)
-print(confusion_matrix)
-print(res_confusion_matrix)
-print(confusion_matrix.shape)
-
 fig, ax = plt.subplots()
 im = ax.imshow(confusion_matrix, cmap=plt.get_cmap('hot'))
 fig.colorbar(im)
