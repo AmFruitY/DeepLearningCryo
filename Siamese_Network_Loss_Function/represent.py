@@ -221,12 +221,13 @@ def visualize_embeddings(embeddings, labels):
 
 # Extract embeddings sorted into different classes from val_dataset
 def extract_embeddings(dataset):
+    images = []
     embeddings = []
     labels = []
 
     for samples in dataset:
         anchor, _, _, label = samples
-
+        images.extend(anchor)
         anchor_embeddings = embedding(resnet.preprocess_input(anchor))  # Obtain embeddings from your model
         embeddings.extend(anchor_embeddings.numpy())
         labels.extend(label.numpy())  # Collect labels for grouping
@@ -254,7 +255,7 @@ def extract_embeddings(dataset):
         selected_arrays = random.sample(class_embeddings[key], min_length)
         embedding_vectors_result.append(selected_arrays)
 
-    return np.array(embedding_vectors_result), np.array(embeddings)
+    return np.array(embedding_vectors_result), np.array(embeddings), np.array(images)
 
 
 def confusion_similarity_matrix(embedding_vectors):
@@ -288,6 +289,29 @@ def diagonal_non_diagonal_mean(array):
 
     return diagonal_average, non_diagonal_elements_average
 
+""" Calculate the derivate using finite differences given two arrays of the same dimensions. """
+def finite_differences(x, y):
+
+    if len(x) == len(y): # This is just to make sure that we are using this function for the same number of dimensions
+        print("The arrays are of the same length!")
+    else:
+        print("You are using arrays of different lengths") # How do I break the function here if the arrays are not the same dimensions?
+
+
+    der = []
+    array_length = len(x)
+
+    for i in range(array_length):
+        if i < array_length-1: # Forward finite differences for the elements 
+            finite_difference = y[i+1]-y[i]/(x[i+1]- x[i])
+            der.append(finite_difference)
+        else: # The common solution for computing the finite difference of the last element is to use the backward finite difference
+                # I am still not sure about this, but since the we will be putting a big number of k, for now it works.
+            back_finite_difference = y[i] - y[i-1] / (x[i] - x[i-1])
+            der.append(back_finite_difference)
+
+    return np.array(np.abs(der))
+
 def optimize_k_means(data, max_k):
     means = []
     inertias = []
@@ -298,6 +322,28 @@ def optimize_k_means(data, max_k):
 
         means.append(k)
         inertias.append(kmeans.inertia_)
+    
+    print(inertias)
+    max_range_y = np.max(inertias)
+    # Temporary k-chooser based on the range
+    for i, element in enumerate(inertias):
+        range_y = np.max(inertias[i:]) - np.min(inertias[i:])
+        rel = range_y/max_range_y
+        print(rel)
+        if rel < 0.012:
+            optimized_k = i # I have already considered that the enumeration starts with index 0
+            print(optimized_k) # It is not perfect, I still have to find a way how to do it correctly.
+            break
+
+
+    # derivative = finite_differences(means, inertias)
+    # print(derivative)
+    # Temporary k-chooser based on the way how the derivatives decline
+    # for i, element in enumerate(derivative):
+        # if element < 0.40:
+            # optimized_k = i+1
+            # print(optimized_k)
+            # break
 
     # Generate the elbow plot
     fig = plt.subplots(figsize = (10, 5))
@@ -308,11 +354,80 @@ def optimize_k_means(data, max_k):
     plt.show()
 
 
-
-
 embedding_vectors_valdataset = extract_embeddings(val_dataset_conf)
 optimize_k_means(embedding_vectors_valdataset[1], 8)
 exit()
+kmeans = KMeans(n_clusters=4, random_state=0, n_init="auto").fit(embedding_vectors_valdataset[1])
+images = embedding_vectors_valdataset[2]
+klabels = kmeans.labels_
+
+def kmeans_images(images, klabels):
+    classed_images = {}
+    for image_ind, klabel in zip(images, klabels):
+        if klabel not in classed_images:
+            classed_images[klabel] = []
+        classed_images[klabel].append(image_ind)
+
+    # Create the resulting list
+    images_result = []
+
+    min_length = min(len(values) for values in classed_images.values())
+
+    for key in sorted(classed_images.keys()):  # Ensure order of keys is consistent
+        # Randomly select x elements from the list corresponding to the current key
+        # This is important since the CosineSimilarity receives input in batches
+
+        selected_arrays = random.sample(classed_images[key], min_length)
+        images_result.append(selected_arrays)
+
+    return images_result
+
+
+def compute_and_plot_average(images):
+    image_count = len(images) # We will use this to automate the step_checkpoint and not rely on our own inputs
+                                # Since we know that shuffling makes the number of training images random
+    step_checkpoint = image_count // 4 # We want an integer intead of a float
+
+    running_avg = np.zeros_like(images[0], dtype=np.float64)
+    checkpoints = [] 
+    plots = []  # List to store the running averages at checkpoints
+
+    for i, img in enumerate(images, start=1):
+        running_avg += (img - running_avg) / i
+        
+        # Save the current average at the checkpoints
+        if i % step_checkpoint == 0:
+            checkpoints.append(i)
+            plots.append(running_avg.copy())  # Save a copy at this iteration
+
+    # Plotting
+    fig, axes = plt.subplots(2, 2)  # Create 1x4 subplot grid
+    axes = axes.flatten()
+    for ax, avg, step in zip(axes, plots, checkpoints):
+        ax.imshow(avg)  # Convert to uint8 for visualization
+        ax.set_title(f"Iteration {step}")
+        ax.axis("off")  # Turn off axes
+
+    plt.tight_layout()
+    plt.show()
+    return running_avg
+
+results = kmeans_images(images, klabels)
+
+compute_and_plot_average(results[0])
+compute_and_plot_average(results[1])
+compute_and_plot_average(results[2])
+compute_and_plot_average(results[3])
+exit()
+
+
+
+
+
+
+
+
+
 confusion_matrix = confusion_similarity_matrix(embedding_vectors_valdataset)
 res_confusion_matrix = diagonal_non_diagonal_mean(confusion_matrix)
 print(confusion_matrix)
