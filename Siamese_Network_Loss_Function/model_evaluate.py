@@ -29,8 +29,6 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
 # Load model
 
-from DistanceLayer import DistanceLayer
-
 custom_objects = {'DistanceLayer': DistanceLayer, 'SiameseModel': SiameseModel}
 
 embedding_dir = Path("/mnt/c/Users/joshu/Desktop/TFG/DeepLearningCryo/Siamese_Network_Loss_Function/siamesetlktrained/embedding_noisy.keras")
