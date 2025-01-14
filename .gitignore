@@ -14,3 +14,9 @@ TensorFlow Tutorial/
 TripletLossExample/
 Siamese_Network_Loss_Function/siamesetlktrained/
 Siamese_Network_Loss_Function/test.py
+Siamese_Network_Loss_Function/model_train_test.py
+Siamese_Network_Loss_Function/Visuals/
+Siamese_Network_Loss_Function/datasetgenerator.py
+Siamese_Network_Loss_Function/datasetload.py
+Siamese_Network_Loss_Function/example.py
+Siamese_Network_Loss_Function/photocombinator.py
