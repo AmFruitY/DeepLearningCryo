@@ -19,7 +19,7 @@ target_shape = (128, 128)
 
 
 class SiameseModel(Model):
-    def __init__(self, siamese_network, margin=0.5, **kwargs):
+    def __init__(self, siamese_network, margin=0.75, **kwargs):
         super().__init__(**kwargs)
         self.siamese_network = siamese_network
         self.margin = margin

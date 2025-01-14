@@ -3,8 +3,6 @@ import numpy as np
 import os
 import random
 import tensorflow as tf
-import copy
-import cv2
 from pathlib import Path
 from keras import applications
 from keras import layers
@@ -15,10 +13,11 @@ from keras import metrics
 from keras import Model
 from keras import callbacks
 from keras.applications import resnet
+import copy
 from sklearn.decomposition import PCA
 from sklearn.cluster import KMeans
 from sklearn.manifold import TSNE
-
+import cv2
 
 # Classes
 from SiameseModel import SiameseModel
@@ -43,13 +42,13 @@ if len(physical_devices) > 0:
 # I will be using 100,100 for the cryogenic molecules
 target_shape = (128, 128)
     
-#%% Paths
+# Paths! 
 cache_dir = Path("/mnt/c/Users/joshu/Desktop/TFG/DeepLearningCryo/Siamese_Network_Loss_Function/data/")
 images_path = [cache_dir / "clear1", cache_dir / "clear2", cache_dir / "clear3", cache_dir / "clear4"]
 # images_path = [cache_dir / "noisy1", cache_dir / "noisy2", cache_dir / "noisy3", cache_dir / "noisy4"]
 
-
-save_path = Path("/mnt/c/Users/joshu/Desktop/TFG/DeepLearningCryo/Siamese_Network_Loss_Function/Visuals/")
+# anchor_images_path = cache_dir / "clear1"
+# other_folders = [cache_dir / "clear2", cache_dir / "clear3", cache_dir / "clear4"]
 
 def preprocess_image(filename):
     """
@@ -99,7 +98,7 @@ def get_random_image_from_folders(folders, num_images):
 
 """
 This function is to automize the creation of dataset to be able to create a larger 
-dataset since we want to use not only one class. It also includes a ground truth label variable that
+dataset since we want to use not only one class. It also includes a label variable that
 makes sure we know what class they came from.
 """
 
@@ -187,7 +186,7 @@ def visualize(anchor, positive, negative):
 
     plt.show()
 
-# visualize(*list(train_dataset.take(1).as_numpy_iterator())[0])
+visualize(*list(train_dataset.take(1).as_numpy_iterator())[0])
 
 #%% Setting the embedding model
 
@@ -197,48 +196,29 @@ def visualize(anchor, positive, negative):
 # Early Stopping to stop the training once it starts to overfit
 callback = callbacks.EarlyStopping(
     monitor='val_loss',    # Metric to monitor
-    patience=5,            # Number of epochs with no improvement before stopping
+    patience=2,            # Number of epochs with no improvement before stopping
     mode='min',            # Lower 'val_loss' is better
     verbose=1              # Print a message when stopping
-)
-
-import keras
-
-data_augmentation = keras.Sequential(
-    [
-        layers.GaussianNoise(0.1),  # Add Gaussian noise with standard deviation 0.1
-        # layers.RandomTranslation(0.1, 0.1),  # Translate images by 20% horizontally and vertically
-    ],
-    name="data_augmentation",
 )
 
 base_cnn = resnet.ResNet50(
     weights="imagenet", input_shape=target_shape + (3,), include_top=False
 )
 
-# Augment the input data
-input_layer = layers.Input(shape=target_shape + (3,))
-augmented_input = data_augmentation(input_layer)
-
-# Pass augmented data to the base CNN
-cnn_output = base_cnn(augmented_input)
-
-flatten = layers.Flatten()(cnn_output)
-dense1 = layers.Dense(256, activation="relu")(flatten)
+flatten = layers.Flatten()(base_cnn.output)
+dense1 = layers.Dense(512, activation="relu")(flatten)
 dense1 = layers.BatchNormalization()(dense1)
-dense2 = layers.Dense(128, activation="relu")(dense1)
+dense2 = layers.Dense(256, activation="relu")(dense1)
 dense2 = layers.BatchNormalization()(dense2)
-output = layers.Dense(128)(dense2)
+output = layers.Dense(256)(dense2)
 
-embedding = Model(input_layer, output, name="Embedding")
+embedding = Model(base_cnn.input, output, name="Embedding")
 
 trainable = False
 for layer in base_cnn.layers:
     if layer.name == "conv5_block1_out":
         trainable = True
     layer.trainable = trainable
-
-
 
 # Setting up the Siamese Network
 
@@ -258,8 +238,9 @@ siamese_network = Model(
 
 #%% Training
 
+
 siamese_model = SiameseModel(siamese_network)
-siamese_model.compile(optimizer=optimizers.Adam(0.00001))
+siamese_model.compile(optimizer=optimizers.Adam(0.0001))
 # If we want to troubleshoot problems, we might want to use smaller epochs and smaller batch sizes so that we can make sure that it is not overloading the system.
 
 # train_triplets, labels = strain_dataset
@@ -269,20 +250,53 @@ siamese_model.summary()  # Check the summary
 
 plt.plot(history.history['loss'])
 plt.plot(history.history['val_loss'])
-plt.ylabel('loss', fontsize = 20)
-plt.xlabel('epoch', fontsize = 20)
-plt.legend(['train', 'test'], loc='upper left', fontsize =  20)
-training_history_path = save_path / "training_history.png"
-plt.savefig(training_history_path)
-# plt.show()
+plt.title('model loss')
+plt.ylabel('loss')
+plt.xlabel('epoch')
+plt.legend(['train', 'test'], loc='upper left')
+plt.show()
+
 
 # Build the model by calling it on dummy data
 dummy_input = [tf.random.uniform((1, 128, 128, 3)) for _ in range(3)]  # Example for triplet inputs
 siamese_model(dummy_input)
 
+
 # Saving the embedding layer since this is the output we want
-embedding_keras = Path("/mnt/c/Users/joshu/Desktop/TFG/DeepLearningCryo/Siamese_Network_Loss_Function/siamesetlktrained/new_training_008_clear.keras")
+# embedding_h5 = Path("/mnt/c/Users/joshu/Desktop/TFG/DeepLearningCryo/Siamese_Network_Loss_Function/siamesetlktrained/new_embedding_clear.h5")
+# embedding.save(embedding_h5, include_optimizer=False)
+embedding_keras = Path("/mnt/c/Users/joshu/Desktop/TFG/DeepLearningCryo/Siamese_Network_Loss_Function/siamesetlktrained/default_model_clear.keras")
 embedding.save(embedding_keras, include_optimizer=False)
+
+def visualize_embeddings(embeddings, labels):
+    """
+    Visualizes the embeddings in 2D space using PCA.
+    Args:
+        embeddings: List of embedding vectors.
+        labels: Corresponding labels for the embeddings.
+    """
+    embeddings = np.array(embeddings)  # Convert to numpy array if not already
+    labels = np.array(labels)
+
+    # Reduce dimensionality to 2D using PCA
+    pca = PCA(n_components=2)
+    reduced_embeddings = pca.fit_transform(embeddings)
+
+    # Plot the embeddings
+    plt.figure(figsize=(10, 8))
+    scatter = plt.scatter(
+        reduced_embeddings[:, 0],
+        reduced_embeddings[:, 1],
+        c=labels,
+        cmap='tab10',
+        alpha=0.7
+    )
+    plt.colorbar(scatter, label='Class Label')
+    plt.title("2D Visualization of Embeddings")
+    plt.xlabel("PCA Dimension 1")
+    plt.ylabel("PCA Dimension 2")
+    plt.show()
+
 
 """ Extract embeddings sorted into different classes from val_dataset.
 
@@ -305,6 +319,10 @@ def extract_embeddings(dataset):
         embeddings.extend(anchor_embeddings.numpy())
         labels.extend(label.numpy())  # Collect labels for grouping
 
+    
+    # Visualize embeddings after extracting them
+    visualize_embeddings(embeddings, labels)
+
     # Organize embeddings by class
     class_embeddings = {}
     for embedding_ind, label in zip(embeddings, labels):
@@ -324,28 +342,8 @@ def extract_embeddings(dataset):
         selected_arrays = random.sample(class_embeddings[key], min_length)
         embedding_vectors_result.append(selected_arrays)
 
-    return np.array(embedding_vectors_result), np.array(embeddings), np.array(images), np.array(labels)
+    return np.array(embedding_vectors_result), np.array(embeddings), np.array(images)
 
-# Dimension reduction - PCA from 256 to 50 - t-SNE from 50 to 2 
-"""
-
-    output:
-        reduced_embeddings: the samples with their reduced embeddings to 50 dimensions used for k-means clustering
-        embeddings_2d: using the reduced embeddings, we further reduce to 2 dimensions using t-SNE for visualization"""
-
-def dimension_reduction(embeddings):
-
-    embeddings = np.array(embeddings)  # Convert to numpy array if not already
-
-    # Reduce dimensionality to 2D using PCA
-    pca = PCA(n_components=50)
-    reduced_embeddings = pca.fit_transform(embeddings)
-
-    # Apply t-SNE
-    tsne = TSNE(n_components=2, perplexity=30, n_iter=1000, random_state=42)
-    embeddings_2d = tsne.fit_transform(reduced_embeddings)
-
-    return reduced_embeddings, embeddings_2d
 
 def confusion_similarity_matrix(embedding_vectors):
     cosine_similarity = metrics.CosineSimilarity()
@@ -384,35 +382,12 @@ confusion_matrix = confusion_similarity_matrix(embedding_vectors_valdataset[0])
 res_confusion_matrix = diagonal_non_diagonal_mean(confusion_matrix)
 fig, ax = plt.subplots()
 im = ax.imshow(confusion_matrix, cmap=plt.get_cmap('hot'))
-ax.get_xaxis().set_ticks([])
-ax.get_yaxis().set_ticks([])
 fig.colorbar(im)
-conf_matrix_path = save_path / "conf_matrix.png"
-fig.savefig(conf_matrix_path)
-# plt.show()
+plt.show()
 
-embeddings = dimension_reduction(embedding_vectors_valdataset[1])
+exit()
 
-def visualize_embeddings(embeddings, labels):
-
-    plt.figure(figsize=(10, 8))
-    for label in np.unique(labels):
-        idx = labels == label
-        plt.scatter(embeddings[idx, 0], embeddings[idx, 1], label=f'Class {label+1}', alpha=0.7)
-
-    plt.xlabel("t-SNE Dimension 1", fontsize=25)
-    plt.ylabel("t-SNE Dimension 2", fontsize=25)
-    plt.legend(fontsize = 20)
-    dim_reduction_path = save_path / "dim_reduction.png"
-    plt.savefig(dim_reduction_path)
-    # plt.show()
-
-visualize_embeddings(embeddings[1], embedding_vectors_valdataset[3])
-
-"""Input: Embeddings without classification,
-        rel: given a relative range ratio, it picks the optimized k clusters to use for clustering
-        
-        It also outputs the elbow plot to visualize the optimal k value for kmeans clustering"""
+"""Input: Embeddings without classification"""
 def optimize_k_means(data, max_k):
     means = []
     inertias = []
@@ -423,32 +398,44 @@ def optimize_k_means(data, max_k):
 
         means.append(k)
         inertias.append(kmeans.inertia_)
+    
+    print(inertias)
     max_range_y = np.max(inertias)
     # Temporary k-chooser based on the range
     for i, element in enumerate(inertias):
         range_y = np.max(inertias[i:]) - np.min(inertias[i:])
         rel = range_y/max_range_y
+        print(rel)
         if rel < 0.012:
             optimized_k = i # I have already considered that the enumeration starts with index 0
-             # It is not perfect, I still have to find a way how to do it correctly.
+            print(optimized_k) # It is not perfect, I still have to find a way how to do it correctly.
             break
 
 
+    # derivative = finite_differences(means, inertias)
+    # print(derivative)
+    # Temporary k-chooser based on the way how the derivatives decline
+    # for i, element in enumerate(derivative):
+        # if element < 0.40:
+            # optimized_k = i+1
+            # print(optimized_k)
+            # break
+
     # Generate the elbow plot
-    fig = plt.subplots(figsize = (10, 7))
+    fig = plt.subplots(figsize = (10, 5))
     plt.plot(means, inertias, 'o-')
-    plt.xlabel('Number of Clusters', fontsize = 20)
-    plt.ylabel('Inertia', fontsize = 20)
+    plt.xlabel('Number of Clusters')
+    plt.ylabel('Inertia')
     plt.grid(True)
-    elbow_plot_path = save_path / "elbow_plot.png"
-    plt.savefig(elbow_plot_path)
-    # plt.show()
-
-    return optimized_k
+    plt.show()
 
 
-optimal_k = optimize_k_means(embeddings[1], 10)
-kmeans = KMeans(n_clusters=4, random_state=42, n_init="auto").fit(embedding_vectors_valdataset[1])
+
+
+
+embedding_vectors_valdataset = extract_embeddings(val_dataset_conf)
+optimize_k_means(embedding_vectors_valdataset[1], 8)
+kmeans = KMeans(n_clusters=4, random_state=0, n_init="auto").fit(embedding_vectors_valdataset[1])
 images = embedding_vectors_valdataset[2]
 klabels = kmeans.labels_
 
@@ -471,76 +458,107 @@ def kmeans_images(images, klabels):
         selected_arrays = random.sample(classed_images[key], min_length)
         images_result.append(selected_arrays)
 
-    return np.array(images_result), min_length
+    return images_result, min_length
 
-def compute_average(list_of_images):
-    """
-    Compute the average image for each class.
 
-    Parameters:
-        list_of_images (list of lists): A list where each index corresponds to a list of images for a specific class.
+def compute_and_plot_average(images):
+    image_count = len(images)  # Automate step_checkpoint calculation
+    step_checkpoint = image_count // 4  # Integer division for checkpoint steps
 
-    Returns:
-        list: A list of average images, one for each class.
-    """
-    avg_list = []  # List to store the average image for each class
+    running_avg = np.zeros_like(images[0], dtype=np.float64)
+    checkpoints = [] 
+    plots = []  # List to store the running averages at checkpoints
 
-    for class_images in list_of_images:
-        avg = np.stack(class_images, axis=0).mean(axis=0)
-        avg_list.append(avg)
-    return np.array(avg_list)
+    for i, img in enumerate(images, start=1):
+        running_avg += (img - running_avg) / i
+        
+        # Save the current average at the checkpoints
+        if i % step_checkpoint == 0:
+            checkpoints.append(i)
+            plots.append(running_avg.copy())  # Save a copy at this iteration
+
+    # Plotting
+    fig, axes = plt.subplots(2, 2)  # Create 2x2 subplot grid
+    axes = axes.flatten()
+    for ax, avg, step in zip(axes, plots, checkpoints):
+        ax.imshow(avg, cmap='gray')  # Ensure grayscale visualization
+        ax.set_title(f"Iteration {step}")
+        ax.axis("off")  # Turn off axes
+
+    plt.tight_layout()
+    plt.show()
+
+    # Resize the final running average to 128x128
+    resized_avg = cv2.resize(running_avg, (128, 128), interpolation=cv2.INTER_LINEAR)
+
+    # Normalize the image to [0, 255] and convert to uint8
+    normalized_avg = cv2.normalize(resized_avg, None, 0, 255, cv2.NORM_MINMAX)
+    normalized_avg = normalized_avg.astype(np.uint8)
+
+    # Save the resized and normalized running average as a PNG
+    cv2.imwrite('running_avg_128x128_last_class.png', normalized_avg)
+
+    return running_avg
 
 
 # Results
 
 # After passing through K-means
-kmeans_results = kmeans_images(images, klabels)[0]
-average_kmeans = compute_average(kmeans_results)
+results = kmeans_images(images, klabels)[0]
+
+for i in range(4):
+    compute_and_plot_average(results[i])
+
+
 
 # Average N-images
 
 N = kmeans_images(images, klabels)[1]
+list_images = get_random_image_from_folders(images_path, N)
 
-random_images_to_avg = []
+rand_image_to_avg = []
+counter = 0 
+for path in list_images:
+    image = np.float64(preprocess_image(path).numpy())
+    rand_image_to_avg.append(image)
 
-for class_folder in images_path:
-    # Get all image paths in the current class folder
-    class_images_path = [str(Path(class_folder) / f) for f in os.listdir(class_folder)]
+def compute_and_plot_average(images):
+    image_count = len(images)  # Automate step_checkpoint calculation
+    step_checkpoint = image_count // 4  # Integer division for checkpoint steps
 
-    # Select N random images without replacement
-    selected_paths = random.sample(class_images_path, min(N, len(class_images_path)))
+    running_avg = np.zeros_like(images[0], dtype=np.float64)
+    checkpoints = [] 
+    plots = []  # List to store the running averages at checkpoints
 
-    # Load and preprocess the selected images
-    images = [np.float64(preprocess_image(path).numpy()) for path in selected_paths]
+    for i, img in enumerate(images, start=1):
+        running_avg += (img - running_avg) / i
+        
+        # Save the current average at the checkpoints
+        if i % step_checkpoint == 0:
+            checkpoints.append(i)
+            plots.append(running_avg.copy())  # Save a copy at this iteration
 
-    random_images_to_avg.append(images)
+    # Plotting
+    fig, axes = plt.subplots(2, 2)  # Create 2x2 subplot grid
+    axes = axes.flatten()
+    for ax, avg, step in zip(axes, plots, checkpoints):
+        ax.imshow(avg, cmap='gray')  # Ensure grayscale visualization
+        ax.set_title(f"Iteration {step}")
+        ax.axis("off")  # Turn off axes
 
-average_random_images = compute_average(random_images_to_avg)
+    plt.tight_layout()
+    plt.show()
 
-def save_images(images_list, filename):
-    num_images_list = len(images_list)
+    # Resize the final running average to 128x128
+    resized_avg = cv2.resize(running_avg, (128, 128), interpolation=cv2.INTER_LINEAR)
 
-    for i in range(num_images_list):
-        avg_path = save_path / f"{filename}_{i+1}.png"
-        plt.imsave(avg_path,images_list[i])
+    # Normalize the image to [0, 255] and convert to uint8
+    normalized_avg = cv2.normalize(resized_avg, None, 0, 255, cv2.NORM_MINMAX)
+    normalized_avg = normalized_avg.astype(np.uint8)
 
-#%% Random N images average
+    # Save the resized and normalized running average as a PNG
+    cv2.imwrite('running_avg_128x128_random.png', normalized_avg)
 
-average_random_per_class_images = []
-for i in range(4):
-    ims_paths = get_random_image_from_folders(images_path, N)
-    ims = [preprocess_image(filename) for filename in ims_paths]
-    average_random_class_images = np.stack(ims, axis=0).mean(axis=0)
-    average_random_per_class_images.append(average_random_class_images)
+    return running_avg
 
-save_images(average_kmeans, "kmeans_average")
-save_images(average_random_images, "random_average")
-save_images(average_random_per_class_images, "random_class_average")
-
-exit()
-
-
-
-
-
-
+compute_and_plot_average(rand_image_to_avg)

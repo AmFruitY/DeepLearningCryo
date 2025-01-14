@@ -16,6 +16,7 @@ from keras import callbacks
 from keras import models
 from keras.applications import resnet
 import copy
+from sklearn.manifold import TSNE
 from sklearn.decomposition import PCA
 from sklearn.cluster import KMeans
 
@@ -31,7 +32,7 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
 custom_objects = {'DistanceLayer': DistanceLayer, 'SiameseModel': SiameseModel}
 
-embedding_dir = Path("/mnt/c/Users/joshu/Desktop/TFG/DeepLearningCryo/Siamese_Network_Loss_Function/siamesetlktrained/embedding_clear.keras")
+embedding_dir = Path("/mnt/c/Users/joshu/Desktop/TFG/DeepLearningCryo/Siamese_Network_Loss_Function/siamesetlktrained/new_training_008_noisy.keras")
 embedding = models.load_model(embedding_dir, custom_objects=custom_objects)
 
 
@@ -40,8 +41,10 @@ embedding = models.load_model(embedding_dir, custom_objects=custom_objects)
 target_shape = (128,128)
 
 cache_dir = Path("/mnt/c/Users/joshu/Desktop/TFG/DeepLearningCryo/Siamese_Network_Loss_Function/data/")
-images_path = cache_dir / "EMD18199_clear"
-# images_path = cache_dir / "EMD18199_noisy"
+# images_path = cache_dir / "EMD18199_clear"
+images_path = cache_dir / "EMD18199_noisy"
+
+save_path = Path("/mnt/c/Users/joshu/Desktop/TFG/DeepLearningCryo/Siamese_Network_Loss_Function/Visuals/")
 
 def preprocess_image(filename):
     """
@@ -62,34 +65,6 @@ dataset = dataset.map(preprocess_image)
 dataset = dataset.batch(8, drop_remainder=False)
 dataset = dataset.prefetch(tf.data.AUTOTUNE)
 
-
-# Results 
-def visualize_embeddings(embeddings):
-    """
-    Visualizes the embeddings in 2D space using PCA.
-    Args:
-        embeddings: List of embedding vectors.
-        labels: Corresponding labels for the embeddings.
-    """
-    embeddings = np.array(embeddings)  # Convert to numpy array if not already
-
-    # Reduce dimensionality to 2D using PCA
-    pca = PCA(n_components=2)
-    reduced_embeddings = pca.fit_transform(embeddings)
-
-    # Plot the embeddings
-    plt.figure(figsize=(10, 8))
-    plt.scatter(
-        reduced_embeddings[:, 0],
-        reduced_embeddings[:, 1],
-        cmap='tab10',
-        alpha=0.7
-    )
-    plt.title("2D Visualization of Embeddings")
-    plt.xlabel("PCA Dimension 1")
-    plt.ylabel("PCA Dimension 2")
-    plt.show()
-
 def extract_embeddings(dataset):
     images = []
     embeddings = []
@@ -102,11 +77,21 @@ def extract_embeddings(dataset):
         embeddings.extend(anchor_embeddings.numpy())
           # Collect labels for grouping
 
-    
-    # Visualize embeddings after extracting them
-    visualize_embeddings(embeddings)
-
     return np.array(embeddings), np.array(images)
+
+def dimension_reduction(embeddings):
+
+    embeddings = np.array(embeddings)  # Convert to numpy array if not already
+
+    # Reduce dimensionality to 2D using PCA
+    pca = PCA(n_components=50)
+    reduced_embeddings = pca.fit_transform(embeddings)
+
+    # Apply t-SNE
+    tsne = TSNE(n_components=2, perplexity=30, n_iter=1000, random_state=42)
+    embeddings_2d = tsne.fit_transform(reduced_embeddings)
+
+    return reduced_embeddings, embeddings_2d
 
 
 """Input: Embeddings without classification"""
@@ -121,43 +106,63 @@ def optimize_k_means(data, max_k):
         means.append(k)
         inertias.append(kmeans.inertia_)
     
-    print(inertias)
     max_range_y = np.max(inertias)
     # Temporary k-chooser based on the range
     for i, element in enumerate(inertias):
         range_y = np.max(inertias[i:]) - np.min(inertias[i:])
         rel = range_y/max_range_y
-        print(rel)
         if rel < 0.012:
             optimized_k = i # I have already considered that the enumeration starts with index 0
             print(optimized_k) # It is not perfect, I still have to find a way how to do it correctly.
             break
 
 
-    # derivative = finite_differences(means, inertias)
-    # print(derivative)
-    # Temporary k-chooser based on the way how the derivatives decline
-    # for i, element in enumerate(derivative):
-        # if element < 0.40:
-            # optimized_k = i+1
-            # print(optimized_k)
-            # break
-
     # Generate the elbow plot
     fig = plt.subplots(figsize = (10, 5))
     plt.plot(means, inertias, 'o-')
-    plt.xlabel('Number of Clusters')
-    plt.ylabel('Inertia')
+    plt.xlabel('Number of Clusters', fontsize = 25)
+    plt.ylabel('Inertia', fontsize = 25)
     plt.grid(True)
     plt.show()
 
+    return optimized_k
+
 
 embedding_vectors_valdataset = extract_embeddings(dataset)
-optimize_k_means(embedding_vectors_valdataset[0], 20)
-kmeans = KMeans(n_clusters=14, random_state=0, n_init="auto").fit(embedding_vectors_valdataset[0])
+embeddings = dimension_reduction(embedding_vectors_valdataset[0])
+
+embeddings_no_labels = embeddings[1]
+
+plt.figure(figsize=(10, 8))
+plt.scatter(embeddings_no_labels[:, 0], embeddings_no_labels[:, 1], alpha=0.7)
+plt.xlabel("t-SNE Dimension 1", fontsize = 25)
+plt.ylabel("t-SNE Dimension 2", fontsize = 25)
+dim_reduction_path = save_path / "dim_reduction_no_labels.png"
+plt.savefig(dim_reduction_path)
+
+k_cluster = optimize_k_means(embedding_vectors_valdataset[0], 20)
+kmeans = KMeans(n_clusters=k_cluster, random_state=0, n_init="auto").fit(embedding_vectors_valdataset[0])
 images = embedding_vectors_valdataset[1]
 klabels = kmeans.labels_
 
+def visualize_embeddings(embeddings, labels):
+
+    plt.figure(figsize=(10, 8))
+    for label in np.unique(labels):
+        idx = labels == label
+        plt.scatter(embeddings[idx, 0], embeddings[idx, 1], label=f'Class {label+1}', alpha=0.7)
+
+    plt.xlabel("t-SNE Dimension 1", fontsize = 25)
+    plt.ylabel("t-SNE Dimension 2", fontsize = 25)
+    plt.legend(fontsize = 16)
+    dim_reduction_path = save_path / "dim_reduction.png"
+    plt.savefig(dim_reduction_path)
+    # plt.show()
+
+visualize_embeddings(embeddings[1], klabels)
+
+
+exit()
 def kmeans_images(images, klabels):
     classed_images = {}
     for image_ind, klabel in zip(images, klabels):
@@ -179,39 +184,6 @@ def kmeans_images(images, klabels):
 
     return images_result
 
-def compute_and_plot_average(images):
-    image_count = len(images) # We will use this to automate the step_checkpoint and not rely on our own inputs
-                                # Since we know that shuffling makes the number of training images random
-    step_checkpoint = image_count // 4 # We want an integer intead of a float
-
-    running_avg = np.zeros_like(images[0], dtype=np.float64)
-    checkpoints = [] 
-    plots = []  # List to store the running averages at checkpoints
-
-    for i, img in enumerate(images, start=1):
-        running_avg += (img - running_avg) / i
-        
-        # Save the current average at the checkpoints
-        if i % step_checkpoint == 0:
-            checkpoints.append(i)
-            plots.append(running_avg.copy())  # Save a copy at this iteration
-
-    # Plotting
-    fig, axes = plt.subplots(2, 2)  # Create 1x4 subplot grid
-    axes = axes.flatten()
-    for ax, avg, step in zip(axes, plots, checkpoints):
-        ax.imshow(avg)  # Convert to uint8 for visualization
-        ax.set_title(f"Iteration {step}")
-        ax.axis("off")  # Turn off axes
-
-    plt.tight_layout()
-    plt.show()
-    return running_avg
-
-results = kmeans_images(images, klabels)
-
-for i in range(14):
-    compute_and_plot_average(results[i])
 
 
 
