@@ -45,8 +45,8 @@ target_shape = (128, 128)
     
 #%% Paths
 cache_dir = Path("/mnt/c/Users/joshu/Desktop/TFG/DeepLearningCryo/Siamese_Network_Loss_Function/data/")
-images_path = [cache_dir / "clear1", cache_dir / "clear2", cache_dir / "clear3", cache_dir / "clear4"]
-# images_path = [cache_dir / "noisy1", cache_dir / "noisy2", cache_dir / "noisy3", cache_dir / "noisy4"]
+# images_path = [cache_dir / "clear1", cache_dir / "clear2", cache_dir / "clear3", cache_dir / "clear4"]
+images_path = [cache_dir / "noisy1", cache_dir / "noisy2", cache_dir / "noisy3", cache_dir / "noisy4"]
 
 
 save_path = Path("/mnt/c/Users/joshu/Desktop/TFG/DeepLearningCryo/Siamese_Network_Loss_Function/Visuals/")
@@ -447,7 +447,7 @@ def optimize_k_means(data, max_k):
     return optimized_k
 
 
-optimal_k = optimize_k_means(embeddings[1], 10)
+optimal_k = optimize_k_means(embeddings[0], 10)
 kmeans = KMeans(n_clusters=4, random_state=42, n_init="auto").fit(embedding_vectors_valdataset[1])
 images = embedding_vectors_valdataset[2]
 klabels = kmeans.labels_
