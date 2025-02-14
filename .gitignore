@@ -5,18 +5,11 @@ Siamese_Network_Loss_Function/.keras/
 Siamese_Network_Loss_Function/__pycache__/
 another_venv/
 Siamese_Network_Loss_Function/data/
-Siamese_Network_Loss_Function/example.py/
-ClassTutorial/
-EmbeddingsOpenAI/
 Introduction/
 ML_Tutorial_David/
 TensorFlow Tutorial/
 TripletLossExample/
 Siamese_Network_Loss_Function/siamesetlktrained/
 Siamese_Network_Loss_Function/test.py
-Siamese_Network_Loss_Function/model_train_test.py
 Siamese_Network_Loss_Function/Visuals/
-Siamese_Network_Loss_Function/datasetgenerator.py
-Siamese_Network_Loss_Function/datasetload.py
-Siamese_Network_Loss_Function/example.py
-Siamese_Network_Loss_Function/photocombinator.py
+Siamese_Network_Loss_Function/model_train_old.py
