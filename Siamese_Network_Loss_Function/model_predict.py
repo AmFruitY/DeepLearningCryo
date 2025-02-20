@@ -94,7 +94,6 @@ def dimension_reduction(embeddings):
     return reduced_embeddings, embeddings_2d
 
 
-"""Input: Embeddings without classification"""
 def optimize_k_means(data, max_k):
     means = []
     inertias = []

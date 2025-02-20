@@ -25,7 +25,8 @@ class DistanceLayer(layers.Layer):
     negative embedding.
     """
 
-    """ * The original code was done using 
+    """ * The original code was done using the Euclidean distance, but I was investigating on how to do it using the cosine similarity
+        to train the model. I was unsuccessful in doing so, but I will leave the code here for future reference.
     """
 
     def __init__(self, **kwargs):
