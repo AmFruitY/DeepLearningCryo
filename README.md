@@ -15,7 +15,7 @@ A key skill I learned during my internship was using virtual environments to man
 
 `python -m venv /path/to/new/virtual/environment`
 
-After setting it up, install the required packages. The versions I used are (if there are any other package version you want me to check, feel free to contact me):
+After setting it up, install the required packages by doing `pip install <library>`. The versions I used are (if there are any other package version you want me to check, feel free to contact me):
 
 - numpy==2.0.2
 - PyQt6==6.8.0
