@@ -1,4 +1,4 @@
-#%% Inspecting
+#%% Libraries
 import matplotlib.pyplot as plt
 import numpy as np
 import os
@@ -24,27 +24,26 @@ from sklearn.cluster import KMeans
 from SiameseModel import SiameseModel
 from DistanceLayer import DistanceLayer
 
+#%% Configuration
 # Hides warning to rebuild TensorFlow
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
 
-# Load model
-
-custom_objects = {'DistanceLayer': DistanceLayer, 'SiameseModel': SiameseModel}
-
+#%% Loading the model
+custom_objects = {'DistanceLayer': DistanceLayer, 'SiameseModel': SiameseModel} # Since we are using a model that uses custom class objects
+                                                                                # We need to create this variable to load the model correctly - This is called a subclassed
 embedding_dir = Path("/mnt/c/Users/joshu/Desktop/TFG/DeepLearningCryo/Siamese_Network_Loss_Function/siamesetlktrained/new_training_008_noisy.keras")
 embedding = models.load_model(embedding_dir, custom_objects=custom_objects)
 
+#%% Loading the dataset
+target_shape = (128,128) # I don't think we need this.
 
-
-# Create the dataset
-target_shape = (128,128)
-
+# The same workflow as before
 cache_dir = Path("/mnt/c/Users/joshu/Desktop/TFG/DeepLearningCryo/Siamese_Network_Loss_Function/data/")
 # images_path = cache_dir / "EMD18199_clear"
 images_path = cache_dir / "EMD18199_noisy"
 
-save_path = Path("/mnt/c/Users/joshu/Desktop/TFG/DeepLearningCryo/Siamese_Network_Loss_Function/Visuals/")
+save_path = Path("/mnt/c/Users/joshu/Desktop/TFG/DeepLearningCryo/Siamese_Network_Loss_Function/Visuals/") # We also want to analize how the model works with a different unseen dataset
 
 def preprocess_image(filename):
     """
@@ -65,7 +64,12 @@ dataset = dataset.map(preprocess_image)
 dataset = dataset.batch(8, drop_remainder=False)
 dataset = dataset.prefetch(tf.data.AUTOTUNE)
 
+
+#%% Analizing the results of infering the model
+# The first step is to extract the embeddings from the dataset
 def extract_embeddings(dataset):
+    """ Given a dataset, extract embeddings using the embedding model. """
+
     images = []
     embeddings = []
 
@@ -79,7 +83,9 @@ def extract_embeddings(dataset):
 
     return np.array(embeddings), np.array(images)
 
+# The second step is to reduce the dimensionality of the embeddings to 2D using PCA and t-SNE
 def dimension_reduction(embeddings):
+    """ Given a set of embeddings, reduce their dimensionality to 2D using PCA and t-SNE. """
 
     embeddings = np.array(embeddings)  # Convert to numpy array if not already
 
@@ -93,8 +99,11 @@ def dimension_reduction(embeddings):
 
     return reduced_embeddings, embeddings_2d
 
-
+# The third step is to optimize the number of clusters using the elbow method
 def optimize_k_means(data, max_k):
+    """ Given a dataset, optimize the number of clusters by visualizing the elbow method. 
+        Returns the optimized number of clusters but using the relative differences between the inertias. I still have to find a way to do it correctly.
+    """
     means = []
     inertias = []
 
@@ -126,11 +135,10 @@ def optimize_k_means(data, max_k):
 
     return optimized_k
 
+embedding_vectors_valdataset = extract_embeddings(dataset) # Extract embeddings from the dataset
+embeddings = dimension_reduction(embedding_vectors_valdataset[0]) # Use the function dimension_reduction to reduce the dimensionality of the embeddings.
 
-embedding_vectors_valdataset = extract_embeddings(dataset)
-embeddings = dimension_reduction(embedding_vectors_valdataset[0])
-
-embeddings_no_labels = embeddings[1]
+embeddings_no_labels = embeddings[1] # Save the embeddings without labels for visualization
 
 plt.figure(figsize=(10, 8))
 plt.scatter(embeddings_no_labels[:, 0], embeddings_no_labels[:, 1], alpha=0.7)
@@ -145,7 +153,7 @@ images = embedding_vectors_valdataset[1]
 klabels = kmeans.labels_
 
 def visualize_embeddings(embeddings, labels):
-
+    """ Visualize the embeddings in 2D space with the labels given."""
     plt.figure(figsize=(10, 8))
     for label in np.unique(labels):
         idx = labels == label
