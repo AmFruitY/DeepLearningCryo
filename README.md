@@ -1,7 +1,28 @@
 # Deep Learning for Cryo-EM Image Classification
 Welcome! This repository contains the code for my final degree project. I'm Josh—feel free to reach out with any questions!
 
-This project explores whether a similarity network can learn from cryo-electron microscopy images. The code is still being cleaned up, but I aim to complete it soon (last update: 06/02/2025).
+This project explores whether a similarity network can learn from cryo-electron microscopy images with Python. The code is still being cleaned up, but I aim to complete it soon (last update: 21/02/2025).
+
+## Libraries and configuration
+
+### GPU Configuration
+This code was developed on a Windows laptop with an RTX 3050 GPU. Training on the CPU was too slow, so I configured TensorFlow to use the GPU.
+
+To simplify the setup, I installed WSL (Windows Subsystem for Linux), which made TensorFlow-GPU installation much easier. I followed the official TensorFlow WSL2 guide for setup: https://www.tensorflow.org/install/pip .
+
+### Virtual Environment
+A key skill I learned during my internship was using virtual environments to manage dependencies. To create one, run:
+
+`python -m venv /path/to/new/virtual/environment`
+
+After setting it up, install the required packages. The versions I used are (if there are any other package version you want me to check, feel free to contact me):
+
+- numpy==2.0.2
+- PyQt6==6.8.0
+- PyQt6-Qt6==6.8.1
+- scikit-learn==1.6.0
+- scipy==1.14.1
+- tensorflow==2.18.0
 
 ## Model Architecture
 The model is inspired by an article on the Keras website. This project applies the same approach to cryo-EM images. As a former physics student, I found deep learning challenging, but Deep Learning with Python by François Chollet helped immensely.
