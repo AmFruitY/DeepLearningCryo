@@ -1,4 +1,4 @@
-#%% Inspecting
+#%% Libraries
 import matplotlib.pyplot as plt
 import numpy as np
 import os
@@ -23,6 +23,7 @@ from sklearn.cluster import KMeans
 from SiameseModel import SiameseModel
 from DistanceLayer import DistanceLayer
 
+#%% Configuration
 # Hides warning to rebuild TensorFlow
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
